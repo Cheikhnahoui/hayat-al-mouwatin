@@ -1,0 +1,175 @@
+{
+ "cats": [
+  {
+   "key": "national",
+   "ar": "الوطنية",
+   "fr": "National",
+   "hue": 345
+  },
+  {
+   "key": "intl",
+   "ar": "الدولية",
+   "fr": "International",
+   "hue": 210
+  },
+  {
+   "key": "politics",
+   "ar": "السياسة",
+   "fr": "Politique",
+   "hue": 15
+  },
+  {
+   "key": "economy",
+   "ar": "الاقتصاد",
+   "fr": "Économie",
+   "hue": 40
+  },
+  {
+   "key": "society",
+   "ar": "المجتمع",
+   "fr": "Société",
+   "hue": 130
+  },
+  {
+   "key": "sport",
+   "ar": "الرياضة",
+   "fr": "Sport",
+   "hue": 100
+  },
+  {
+   "key": "culture",
+   "ar": "الثقافة",
+   "fr": "Culture",
+   "hue": 285
+  },
+  {
+   "key": "tech",
+   "ar": "التكنولوجيا",
+   "fr": "Technologie",
+   "hue": 190
+  }
+ ],
+ "articles": [
+  {
+   "cat": "national",
+   "title_ar": "نواكشوط تدشّن أكبر مشروع لتحلية المياه لتأمين إمداد العاصمة",
+   "title_fr": "Nouakchott lance son plus grand projet de dessalement pour sécuriser l’eau de la capitale",
+   "body_ar": "أعلنت السلطات في العاصمة بدء أشغال محطة جديدة لتحلية مياه البحر ستغطي حاجة مئات الآلاف من السكان خلال السنوات المقبلة.\nوقال مسؤولون إن المشروع سيخفف الضغط على الشبكة الحالية ويقلل انقطاعات الماء في الأحياء الطرفية.\nومن المنتظر أن تدخل المرحلة الأولى الخدمة خلال العام المقبل.",
+   "body_fr": "Les autorités ont annoncé le début des travaux d’une nouvelle station de dessalement qui couvrira les besoins de centaines de milliers d’habitants.\nSelon des responsables, le projet réduira la pression sur le réseau actuel et les coupures dans les quartiers périphériques.\nLa première phase devrait entrer en service l’an prochain.",
+   "author": "محمد ولد أحمد",
+   "date": "2026-11-19",
+   "views": 5200,
+   "opinion": false
+  },
+  {
+   "cat": "economy",
+   "title_ar": "ارتفاع صادرات الأسماك يعزّز نمو الاقتصاد في نواذيبو",
+   "title_fr": "Hausse des exportations de poisson : Nouadhibou tire la croissance",
+   "body_ar": "سجلت صادرات الثروة السمكية ارتفاعاً ملحوظاً هذا العام بفضل تحسن سلاسل التبريد وفتح أسواق جديدة.\nويرى خبراء أن تثمين المنتوج محلياً هو المفتاح لخلق فرص عمل للشباب.",
+   "body_fr": "Les exportations halieutiques ont nettement progressé grâce à de meilleures chaînes du froid et à de nouveaux marchés.\nDes experts estiment que la valorisation locale est la clé pour créer des emplois pour les jeunes.",
+   "author": "فاطمة بنت سيدي",
+   "date": "2026-11-19",
+   "views": 4100,
+   "opinion": false
+  },
+  {
+   "cat": "sport",
+   "title_ar": "المرابطون يستعدون لمواجهة حاسمة في تصفيات كأس إفريقيا",
+   "title_fr": "Les Mourabitounes se préparent à un match décisif des éliminatoires de la CAN",
+   "body_ar": "واصل المنتخب الوطني تدريباته استعداداً للمباراة المقبلة وسط أجواء معنوية عالية ودعم جماهيري كبير.",
+   "body_fr": "La sélection nationale poursuit sa préparation avant le prochain match, dans une ambiance très positive et avec un large soutien populaire.",
+   "author": "سيدي محمد ولد الشيخ",
+   "date": "2026-11-18",
+   "views": 6800,
+   "opinion": false
+  },
+  {
+   "cat": "politics",
+   "title_ar": "البرلمان يناقش مشروع قانون جديد لدعم التشغيل",
+   "title_fr": "Le Parlement examine un projet de loi pour soutenir l’emploi",
+   "body_ar": "بدأت لجنة برلمانية دراسة مشروع قانون يهدف إلى تشجيع المؤسسات الصغيرة على توظيف الخريجين الجدد.",
+   "body_fr": "Une commission parlementaire examine un texte visant à encourager les petites entreprises à recruter de jeunes diplômés.",
+   "author": "عائشة بنت المختار",
+   "date": "2026-11-18",
+   "views": 2900,
+   "opinion": false
+  },
+  {
+   "cat": "intl",
+   "title_ar": "قمة إقليمية في الرباط تبحث الأمن الغذائي في الساحل",
+   "title_fr": "Sommet régional à Rabat sur la sécurité alimentaire au Sahel",
+   "body_ar": "اجتمع قادة ومسؤولون لبحث سبل مواجهة آثار الجفاف وتعزيز التعاون الزراعي بين دول المنطقة.",
+   "body_fr": "Dirigeants et responsables se sont réunis pour examiner les effets de la sécheresse et renforcer la coopération agricole régionale.",
+   "author": "وكالات",
+   "date": "2026-11-17",
+   "views": 1800,
+   "opinion": false
+  },
+  {
+   "cat": "culture",
+   "title_ar": "مهرجان المدائن التراثية يفتح أبوابه في شنقيط وودان",
+   "title_fr": "Le festival des Villes anciennes ouvre ses portes à Chinguetti et Ouadane",
+   "body_ar": "يستقبل المهرجان زواره بعروض الشعر الحساني والموسيقى التقليدية ومعارض المخطوطات النادرة.",
+   "body_fr": "Le festival accueille ses visiteurs avec de la poésie hassanie, de la musique traditionnelle et des expositions de manuscrits rares.",
+   "author": "خديجة بنت عبد الله",
+   "date": "2026-11-17",
+   "views": 3300,
+   "opinion": false
+  },
+  {
+   "cat": "tech",
+   "title_ar": "الطاقة الشمسية تصل إلى عشرات القرى بفضل مبادرة شبابية",
+   "title_fr": "Le solaire arrive dans des dizaines de villages grâce à une initiative de jeunes",
+   "body_ar": "نجح فريق من المهندسين الشباب في تركيب أنظمة شمسية صغيرة وفرت الإنارة والاتصال لقرى نائية.",
+   "body_fr": "Une équipe de jeunes ingénieurs a installé de petits systèmes solaires qui apportent lumière et connexion à des villages isolés.",
+   "author": "محمد ولد أحمد",
+   "date": "2026-11-16",
+   "views": 2500,
+   "opinion": false
+  },
+  {
+   "cat": "society",
+   "title_ar": "حملة وطنية للتوعية بالصحة المدرسية تنطلق الأسبوع المقبل",
+   "title_fr": "Une campagne nationale sur la santé scolaire démarre la semaine prochaine",
+   "body_ar": "تستهدف الحملة آلاف التلاميذ في عدة ولايات، وتشمل فحوصاً مجانية وورشات للتغذية السليمة.",
+   "body_fr": "La campagne vise des milliers d’élèves dans plusieurs régions, avec des bilans gratuits et des ateliers de nutrition.",
+   "author": "فاطمة بنت سيدي",
+   "date": "2026-11-16",
+   "views": 2100,
+   "opinion": false
+  },
+  {
+   "cat": "society",
+   "title_ar": "كيف يغيّر المحتوى الرقمي علاقة المواطن بالإعلام؟",
+   "title_fr": "Comment le numérique change la relation du citoyen aux médias",
+   "body_ar": "مقال تحليلي حول صعود الإعلام الجديد وما يعنيه للمصداقية والمسؤولية المهنية في موريتانيا.",
+   "body_fr": "Analyse de l’essor des nouveaux médias et de ses enjeux de crédibilité et de responsabilité professionnelle en Mauritanie.",
+   "author": "د. سالم ولد البشير",
+   "date": "2026-11-15",
+   "views": 1700,
+   "opinion": true
+  },
+  {
+   "cat": "economy",
+   "title_ar": "قراءة في أرقام الميزانية: أين تذهب الأولويات؟",
+   "title_fr": "Budget : lecture des chiffres, où vont les priorités ?",
+   "body_ar": "تحليل لأهم بنود الإنفاق العمومي وانعكاساتها على القدرة الشرائية للمواطن.",
+   "body_fr": "Analyse des principaux postes de dépense publique et de leur effet sur le pouvoir d’achat.",
+   "author": "أ. مريم بنت الداه",
+   "date": "2026-11-15",
+   "views": 1500,
+   "opinion": true
+  },
+  {
+   "cat": "politics",
+   "title_ar": "الحوار الوطني: فرصة للتوافق أم اختبار للثقة؟",
+   "title_fr": "Dialogue national : opportunité de consensus ou test de confiance ?",
+   "body_ar": "يناقش الكاتب شروط نجاح الحوار الوطني وما ينتظره الرأي العام منه.",
+   "body_fr": "L’auteur examine les conditions de réussite du dialogue national et les attentes de l’opinion.",
+   "author": "د. سالم ولد البشير",
+   "date": "2026-11-14",
+   "views": 1900,
+   "opinion": true
+  }
+ ]
+}
