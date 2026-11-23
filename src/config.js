@@ -14,7 +14,7 @@ const config = {
   dbPath: path.resolve(root, env.DATABASE_PATH || './data/hayat.db'),
   uploadDir: path.resolve(root, env.UPLOAD_DIR || './data/uploads'),
   appSecret: env.APP_SECRET || '',
-  trustProxy: env.TRUST_PROXY ? parseInt(env.TRUST_PROXY, 10) || 1 : 0,
+  trustProxy: parseInt(env.TRUST_PROXY || '0', 10) || 0,
   maxImageBytes: (parseFloat(env.MAX_IMAGE_MB) || 8) * 1024 * 1024,
   maxVideoBytes: (parseFloat(env.MAX_VIDEO_MB) || 60) * 1024 * 1024,
   sessionHours: 12,
