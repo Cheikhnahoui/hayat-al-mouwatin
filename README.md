@@ -6,8 +6,8 @@ The original single-file prototype is preserved in [`legacy/prototype.html`](leg
 
 ## Stack
 
-Node.js >= 22 · Express 5 · SQLite (better-sqlite3, WAL) · server-rendered pages (SEO-friendly, no client framework) · sharp (image optimisation) · sanitize-html · helmet.
-No external service is required: one process, one database file, one uploads folder.
+Node.js >= 22 · Express 5 · SQLite through libSQL (local file in development, hosted Turso database in production / on Vercel) · server-rendered pages (SEO-friendly, no client framework) · sharp (image optimisation) · sanitize-html · helmet.
+Locally nothing external is needed: one process, one database file, one uploads folder. On Vercel you add a Turso database and a Blob store (both have free tiers).
 
 ## Quick start (development)
 
@@ -38,7 +38,10 @@ Passwords need at least 10 characters with letters and digits. No credentials ar
 | `NODE_ENV` | `production` enables secure cookies, HSTS and enforces `APP_SECRET` |
 | `PORT` | HTTP port |
 | `SITE_URL` | Public URL (canonical links, sitemap, Open Graph) |
-| `DATABASE_PATH` | SQLite file (default `./data/hayat.db`) |
+| `DATABASE_PATH` | Local SQLite file (default `./data/hayat.db`), used when `DATABASE_URL` is empty |
+| `DATABASE_URL`, `DATABASE_AUTH_TOKEN` | Hosted libSQL / Turso database (required on Vercel) |
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob store for uploads (set automatically by Vercel) |
+| `CRON_SECRET` | Protects `/api/cron` |
 | `UPLOAD_DIR` | Media folder (default `./data/uploads`) |
 | `APP_SECRET` | 32+ random characters (`openssl rand -hex 32`) |
 | `TRUST_PROXY` | `1` when behind nginx / Caddy / Cloudflare |
@@ -60,11 +63,44 @@ npm start                              # or: pm2 start src/server.js --name haya
 * Update: `git pull && npm ci --omit=dev && npm run migrate && pm2 restart hayat`.
 * There is no build step. GitHub Pages cannot host this app because it needs a Node server: use a VPS, Render, Railway, Fly.io, etc.
 
+## Deploying on Vercel
+
+Vercel runs the app as a serverless function, so it needs a hosted database (Turso) and cloud file storage (Vercel Blob). Everything else is already wired (`vercel.json`, `api/index.js`).
+
+1. **Database (Turso).** Create a free account at turso.tech, then create a database and a token:
+   ```bash
+   turso db create hayat
+   turso db show hayat --url          # -> DATABASE_URL  (libsql://...)
+   turso db tokens create hayat       # -> DATABASE_AUTH_TOKEN
+   ```
+2. **Vercel project.** Import the GitHub repo in Vercel (Framework preset: *Other*; no build command needed).
+3. **Blob store.** In the project: *Storage -> Create -> Blob*, connect it to the project. This adds `BLOB_READ_WRITE_TOKEN` automatically.
+4. **Environment variables** (Project -> Settings -> Environment Variables, Production):
+
+   | Name | Value |
+   |---|---|
+   | `APP_SECRET` | `openssl rand -hex 32` |
+   | `SITE_URL` | your public URL, e.g. `https://your-site.vercel.app` (no trailing slash) |
+   | `DATABASE_URL` | from step 1 |
+   | `DATABASE_AUTH_TOKEN` | from step 1 |
+   | `CRON_SECRET` | any long random string |
+
+   `NODE_ENV`, `VERCEL` and `BLOB_READ_WRITE_TOKEN` are provided by Vercel.
+5. **Deploy**, then create the first Super Admin **from your own computer**, pointing at the same database. Put `DATABASE_URL` and `DATABASE_AUTH_TOKEN` in your local `.env` (and `NODE_ENV=development`), then run `npm run create-admin`. The schema is created automatically on the first request (and by this command).
+6. Open `https://your-site.vercel.app/admin`.
+
+Notes and limits on Vercel:
+* **Upload size:** Vercel functions accept request bodies up to 4.5 MB, so images are limited to 4 MB and videos are not supported through the uploader (embed YouTube / Vimeo instead).
+* **Scheduled articles:** there are no background timers. Scheduled publishing runs on visitor traffic (at most every 30 s) and from a daily Vercel Cron call (`/api/cron`, Hobby plan limit). On a Pro plan you can change the schedule in `vercel.json` to `* * * * *`.
+* **Rate limiting** (login, comments) is per function instance, so it is best-effort on serverless. Account lockout and comment throttling are stored in the database and are exact.
+* The demo seed (`npm run seed:demo`) is for local development only.
+
 ## Architecture
 
 ```
-src/server.js          app, security headers (CSP), background jobs (scheduled publishing, ad-expiry alerts)
-src/db/                migrations (001_init.sql), seed, demo seed
+src/server.js          app, security headers (CSP), start-up (migrations), scheduled jobs (timer, lazy, /api/cron)
+api/index.js           Vercel serverless entry point (see vercel.json)
+src/db/                async libSQL layer, migrations (001_init.sql), seed, demo seed
 src/lib/               rbac, auth, articles (workflow + revisions), content (public queries), media,
                        ads, comments, settings, notify, audit, sanitize
 src/routes/public.js   /ar and /fr site, sitemap.xml, robots.txt, RSS, ad click redirect
@@ -85,7 +121,7 @@ Super Admin (everything), Admin, Editor, Journalist, Advertising Manager. Permis
 
 ### Editorial workflow
 
-`draft -> pending -> published | scheduled` or `rejected` (with a note), plus unpublish, archive / restore, delete and a revision history with restore. Notifications are stored in the database (read / unread). Scheduled articles are published by a background job that runs every minute.
+`draft -> pending -> published | scheduled` or `rejected` (with a note), plus unpublish, archive / restore, delete and a revision history with restore. Notifications are stored in the database (read / unread). Scheduled articles are published by a job that runs every minute on a long-running server, and on traffic / cron on Vercel.
 
 ### Security
 

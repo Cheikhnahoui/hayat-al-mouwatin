@@ -16,35 +16,47 @@ const CATEGORIES = [
   { key: 'technology', ar: 'التكنولوجيا', fr: 'Technologie', hue: 190, slug_ar: 'تكنولوجيا', slug_fr: 'technologie' },
 ];
 
-function seed() {
-  db.migrate();
-  db.transaction(() => {
+async function seed() {
+  (await db.migrate());
+  (await db.transaction(async () => {
     const insPerm = db.prepare('INSERT INTO permissions (key, description) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET description = excluded.description');
-    for (const [k, d] of Object.entries(PERMISSIONS)) insPerm.run(k, d);
+    for (const [k, d] of Object.entries(PERMISSIONS)) (await insPerm.run(k, d));
     const insRole = db.prepare('INSERT INTO roles (key, name_ar, name_fr) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET name_ar = excluded.name_ar, name_fr = excluded.name_fr');
     const link = db.prepare('INSERT OR IGNORE INTO role_permissions (role_id, permission_id) SELECT r.id, p.id FROM roles r, permissions p WHERE r.key = ? AND p.key = ?');
     for (const [k, r] of Object.entries(ROLES)) {
-      insRole.run(k, r.ar, r.fr);
-      for (const p of r.perms) link.run(k, p);
+      (await insRole.run(k, r.ar, r.fr));
+      for (const p of r.perms) (await link.run(k, p));
     }
-    if (!db.prepare('SELECT 1 FROM categories LIMIT 1').get()) {
-      CATEGORIES.forEach((c, i) => {
-        const id = db.prepare('INSERT INTO categories (key, hue, sort_order) VALUES (?,?,?)').run(c.key, c.hue, i + 1).lastInsertRowid;
+    if (!(await db.prepare('SELECT 1 FROM categories LIMIT 1').get())) {
+      for (const [i, c] of CATEGORIES.entries()) {
+        const id = (await db.prepare('INSERT INTO categories (key, hue, sort_order) VALUES (?,?,?)').run(c.key, c.hue, i + 1)).lastInsertRowid;
         const t = db.prepare('INSERT INTO category_translations (category_id, lang, name, slug, description) VALUES (?,?,?,?,?)');
-        t.run(id, 'ar', c.ar, c.slug_ar, `آخر أخبار ${c.ar}`);
-        t.run(id, 'fr', c.fr, c.slug_fr, `Toute l’actualité : ${c.fr}`);
-      });
+        (await t.run(id, 'ar', c.ar, c.slug_ar, `آخر أخبار ${c.ar}`));
+        (await t.run(id, 'fr', c.fr, c.slug_fr, `Toute l’actualité : ${c.fr}`));
+      }
     }
-  })();
+  })());
   // make sure every default setting exists in DB so it shows up in the settings screen
-  const have = new Set(db.prepare('SELECT key FROM settings').all().map((r) => r.key));
+  const have = new Set((await db.prepare('SELECT key FROM settings').all()).map((r) => r.key));
   const missing = Object.fromEntries(Object.entries(settings.DEFAULTS).filter(([k]) => !have.has(k)));
-  settings.set(missing);
+  (await settings.set(missing));
 }
-module.exports = { seed, CATEGORIES };
+// Cheap start-up check for serverless cold starts: run the (many-statement) seed only when the
+// role / permission definitions changed since the last run.
+async function ensureSeeded() {
+  await db.migrate();
+  const version = require('crypto').createHash('sha1').update(JSON.stringify([PERMISSIONS, ROLES, CATEGORIES, 1])).digest('hex');
+  const row = await db.prepare("SELECT value FROM settings WHERE key = '_seed_version'").get();
+  if (row && row.value === version) return false;
+  await seed();
+  await db.prepare("INSERT INTO settings (key, value) VALUES ('_seed_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(version);
+  return true;
+}
+module.exports = { seed, ensureSeeded, CATEGORIES };
 
 if (require.main === module) {
-  seed();
-  console.log('Seed complete: roles, permissions, categories and default settings are in place.');
-  console.log('Next: create the first Super Admin with `npm run create-admin`.');
+  seed().then(() => {
+    console.log('Seed complete: roles, permissions, categories and default settings are in place.');
+    console.log('Next: create the first Super Admin with `npm run create-admin`.');
+  }).catch((e) => { console.error(e); process.exit(1); });
 }

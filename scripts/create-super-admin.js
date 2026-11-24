@@ -18,7 +18,7 @@ function ask(q, hidden = false) {
 }
 
 (async () => {
-  seed();
+  (await seed());
   const e = process.env;
   const username = e.ADMIN_USERNAME || (await ask('Username: '));
   const email = e.ADMIN_EMAIL || (await ask('Email: '));
@@ -32,10 +32,10 @@ function ask(q, hidden = false) {
   if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(username)) { console.error('Invalid username (3-32 chars: letters, digits, _ . -).'); process.exit(1); }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { console.error('Invalid email.'); process.exit(1); }
   if (checkPasswordPolicy(password)) { console.error('Password too weak: use at least 10 characters with letters and digits.'); process.exit(1); }
-  if (db.prepare('SELECT 1 FROM users WHERE lower(username) = lower(?) OR lower(email) = lower(?)').get(username, email)) { console.error('A user with this username or email already exists.'); process.exit(1); }
+  if ((await db.prepare('SELECT 1 FROM users WHERE lower(username) = lower(?) OR lower(email) = lower(?)').get(username, email))) { console.error('A user with this username or email already exists.'); process.exit(1); }
 
-  const id = db.prepare('INSERT INTO users (username, email, password_hash, name_ar, name_fr) VALUES (?,?,?,?,?)').run(username, email, hashPassword(password), name, name).lastInsertRowid;
-  db.prepare("INSERT INTO user_roles (user_id, role_id) SELECT ?, id FROM roles WHERE key = 'super_admin'").run(id);
-  db.prepare("INSERT INTO audit_logs (user_id, action, entity, entity_id, details) VALUES (?, 'user.create_super_admin', 'user', ?, 'created via CLI')").run(id, String(id));
+  const id = (await db.prepare('INSERT INTO users (username, email, password_hash, name_ar, name_fr) VALUES (?,?,?,?,?)').run(username, email, hashPassword(password), name, name)).lastInsertRowid;
+  (await db.prepare("INSERT INTO user_roles (user_id, role_id) SELECT ?, id FROM roles WHERE key = 'super_admin'").run(id));
+  (await db.prepare("INSERT INTO audit_logs (user_id, action, entity, entity_id, details) VALUES (?, 'user.create_super_admin', 'user', ?, 'created via CLI')").run(id, String(id)));
   console.log(`Super Admin "${username}" created. Log in at /admin`);
 })();

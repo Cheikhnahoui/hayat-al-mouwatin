@@ -2,11 +2,49 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const express = require('express');
 const sharp = require('sharp');
 const db = require('../db');
 const config = require('../config');
 
-fs.mkdirSync(config.uploadDir, { recursive: true });
+// ---- storage backend: Vercel Blob when BLOB_READ_WRITE_TOKEN is set, local disk otherwise ----
+const useBlob = !!config.blobToken;
+function blobBase() {
+  if (config.blobBaseUrl) return config.blobBaseUrl;
+  // token format: vercel_blob_rw_<storeId>_<secret>
+  const m = /^vercel_blob_rw_([a-z0-9]+)_/i.exec(config.blobToken);
+  return m ? `https://${m[1].toLowerCase()}.public.blob.vercel-storage.com` : '';
+}
+const blobHost = () => (useBlob && blobBase() ? new URL(blobBase()).origin : '');
+if (!useBlob) { try { fs.mkdirSync(config.uploadDir, { recursive: true }); } catch { /* read-only file system */ } }
+
+async function storeFile(name, buffer, contentType) {
+  if (useBlob) {
+    const { put } = require('@vercel/blob');
+    await put(`uploads/${name}`, buffer, { access: 'public', token: config.blobToken, contentType, addRandomSuffix: false, allowOverwrite: true, cacheControlMaxAge: 31536000 });
+  } else {
+    await fs.promises.writeFile(path.join(config.uploadDir, name), buffer);
+  }
+}
+async function removeFile(name) {
+  try {
+    if (useBlob) { const { del } = require('@vercel/blob'); await del(`${blobBase()}/uploads/${name}`, { token: config.blobToken }); }
+    else await fs.promises.unlink(path.join(config.uploadDir, path.basename(name)));
+  } catch { /* already gone */ }
+}
+// express handler for /uploads/*
+function serve() {
+  if (useBlob) {
+    const r = express.Router();
+    r.get('/:file', (req, res) => {
+      const f = path.basename(req.params.file);
+      if (!/^[\w.-]+$/.test(f)) return res.status(404).end();
+      res.set('Cache-Control', 'public, max-age=31536000, immutable').redirect(302, `${blobBase()}/uploads/${f}`);
+    });
+    return r;
+  }
+  return express.static(config.uploadDir, { maxAge: '30d', immutable: true, index: false, dotfiles: 'deny', setHeaders: (res) => res.set('X-Content-Type-Options', 'nosniff') });
+}
 
 // detect real type from magic bytes (never trust client mime / extension)
 function sniff(buf) {
@@ -29,38 +67,37 @@ async function saveUpload(file, userId, folder = 'general') {
   const original = String(file.originalname || '').replace(/[^\p{L}\p{N}._ -]/gu, '').slice(0, 120);
   let rec;
   if (t.kind === 'image') {
-    const img = sharp(file.buffer, { failOn: 'error', limitInputPixels: 60e6 }).rotate(); // auto-orient, strips EXIF on output
+    const img = sharp(file.buffer, { failOn: 'error', limitInputPixels: 60e6 }).rotate(); // auto-orient; output carries no EXIF
     const meta = await sharp(file.buffer).metadata();
     const keepGif = t.mime === 'image/gif' && meta.pages > 1;
-    const main = `${base}.webp`;
-    const thumb = `${base}-400.webp`, medium = `${base}-900.webp`;
+    const main = `${base}.webp`, thumb = `${base}-400.webp`, medium = `${base}-900.webp`;
+    const webp = (w, q) => img.clone().resize({ width: w, withoutEnlargement: true }).webp({ quality: q }).toBuffer();
     if (keepGif) {
       const gif = `${base}.gif`;
-      fs.writeFileSync(path.join(config.uploadDir, gif), file.buffer);
-      await img.clone().resize({ width: 400, withoutEnlargement: true }).webp({ quality: 78 }).toFile(path.join(config.uploadDir, thumb));
+      await storeFile(gif, file.buffer, 'image/gif');
+      await storeFile(thumb, await webp(400, 78), 'image/webp');
       rec = { file: gif, thumb, medium: gif, mime: 'image/gif', w: meta.width, h: meta.height, size: file.size };
     } else {
-      const out = await img.clone().resize({ width: 2000, height: 2000, fit: 'inside', withoutEnlargement: true }).webp({ quality: 82 }).toFile(path.join(config.uploadDir, main));
-      await img.clone().resize({ width: 900, withoutEnlargement: true }).webp({ quality: 80 }).toFile(path.join(config.uploadDir, medium));
-      await img.clone().resize({ width: 400, withoutEnlargement: true }).webp({ quality: 76 }).toFile(path.join(config.uploadDir, thumb));
-      rec = { file: main, thumb, medium, mime: 'image/webp', w: out.width, h: out.height, size: out.size };
+      const big = await img.clone().resize({ width: 2000, height: 2000, fit: 'inside', withoutEnlargement: true }).webp({ quality: 82 }).toBuffer({ resolveWithObject: true });
+      await storeFile(main, big.data, 'image/webp');
+      await storeFile(medium, await webp(900, 80), 'image/webp');
+      await storeFile(thumb, await webp(400, 76), 'image/webp');
+      rec = { file: main, thumb, medium, mime: 'image/webp', w: big.info.width, h: big.info.height, size: big.info.size };
     }
   } else {
     const main = `${base}.${t.ext}`;
-    fs.writeFileSync(path.join(config.uploadDir, main), file.buffer);
+    await storeFile(main, file.buffer, t.mime);
     rec = { file: main, thumb: null, medium: null, mime: t.mime, w: null, h: null, size: file.size };
   }
-  const info = db.prepare(`INSERT INTO media (kind, file, thumb, medium, original_name, mime, size, width, height, folder, uploaded_by)
+  const info = await db.prepare(`INSERT INTO media (kind, file, thumb, medium, original_name, mime, size, width, height, folder, uploaded_by)
     VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(t.kind, rec.file, rec.thumb, rec.medium, original, rec.mime, rec.size, rec.w, rec.h, folder, userId);
-  return db.prepare('SELECT * FROM media WHERE id = ?').get(info.lastInsertRowid);
+  return (await db.prepare('SELECT * FROM media WHERE id = ?').get(info.lastInsertRowid));
 }
 
-function deleteMediaFiles(m) {
-  for (const f of new Set([m.file, m.thumb, m.medium].filter(Boolean))) {
-    try { fs.unlinkSync(path.join(config.uploadDir, path.basename(f))); } catch { /* already gone */ }
-  }
+async function deleteMediaFiles(m) {
+  for (const f of new Set([m.file, m.thumb, m.medium].filter(Boolean))) await removeFile(f);
 }
 
 const url = (m, size = 'file') => (m ? '/uploads/' + (m[size] || m.file) : null);
 
-module.exports = { saveUpload, deleteMediaFiles, url, sniff };
+module.exports = { saveUpload, deleteMediaFiles, url, sniff, serve, blobHost, storeFile };

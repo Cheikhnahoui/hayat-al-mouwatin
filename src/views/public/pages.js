@@ -8,23 +8,23 @@ const { videoEmbedUrl } = require('../../lib/sanitize');
 const C = require('./components');
 
 // ---------------- HOME ----------------
-function home(ctx, ads) {
+async function home(ctx, ads) {
   const { lang, t } = ctx;
   const order = settings.get('home_sections').split(',').map((s) => s.trim()).filter(Boolean);
   const on = (k) => order.includes(k);
 
-  const main = content.list(lang, { where: "a.featured_slot = 'main'", limit: 1 });
-  const sec = content.list(lang, { where: "a.featured_slot = 'secondary'", limit: 2, order: 'a.updated_at DESC' });
+  const main = (await content.list(lang, { where: "a.featured_slot = 'main'", limit: 1 }));
+  const sec = (await content.list(lang, { where: "a.featured_slot = 'secondary'", limit: 2, order: 'a.updated_at DESC' }));
   let used = new Set([...main, ...sec].map((a) => a.id));
-  const fill = (n, exclude) => content.list(lang, { where: `a.type = 'news' ${exclude.size ? `AND a.id NOT IN (${[...exclude].join(',')})` : ''}`, limit: n });
+  const fill = async (n, exclude) => (await content.list(lang, { where: `a.type = 'news' ${exclude.size ? `AND a.id NOT IN (${[...exclude].join(',')})` : ''}`, limit: n }));
   let heroMain = main[0];
   let heroSec = sec;
-  if (!heroMain) { heroMain = fill(1, used)[0]; if (heroMain) used.add(heroMain.id); }
-  if (heroSec.length < 2) { const extra = fill(2 - heroSec.length, used); extra.forEach((a) => used.add(a.id)); heroSec = heroSec.concat(extra); }
+  if (!heroMain) { heroMain = (await fill(1, used))[0]; if (heroMain) used.add(heroMain.id); }
+  if (heroSec.length < 2) { const extra = (await fill(2 - heroSec.length, used)); extra.forEach((a) => used.add(a.id)); heroSec = heroSec.concat(extra); }
 
-  const latest = content.list(lang, { where: `a.type <> 'opinion' ${used.size ? `AND a.id NOT IN (${[...used].join(',')})` : ''}`, limit: 8 });
-  const popular = content.mostRead(lang, 5);
-  const trending = content.trending(lang, 5);
+  const latest = (await content.list(lang, { where: `a.type <> 'opinion' ${used.size ? `AND a.id NOT IN (${[...used].join(',')})` : ''}`, limit: 8 }));
+  const popular = (await content.mostRead(lang, 5));
+  const trending = (await content.trending(lang, 5));
 
   const renders = {
     hero: () => (heroMain ? `<div class="w"><div class="hero">${C.hero(ctx, heroMain, true)}<div class="side">${heroSec.map((a) => C.heroSmall(ctx, a)).join('')}</div></div></div>` : ''),
@@ -32,32 +32,34 @@ function home(ctx, ads) {
       const aside = `<aside class="sidebar-stack">${on('popular') && popular.length ? `<div class="box">${C.sectionHead(t('most_read'))}${C.popList(ctx, popular)}</div>` : ''}${on('trending') && trending.length ? `<div class="box">${C.sectionHead(t('trending'))}${C.popList(ctx, trending)}</div>` : ''}${C.adSlot(ctx, ads.sidebar, 'side')}</aside>`;
       return `<div class="w"><div class="cols"><section>${C.sectionHead(t('latest'))}${latest.map((a) => C.row(ctx, a)).join('') || `<p class="empty">${esc(t('no_articles'))}</p>`}</section>${aside}</div></div>`;
     },
-    categories: () => {
+    categories: async () => {
       let html = '', i = 0;
       for (const c of ctx.cats.filter((x) => x.show_on_home)) {
-        const l = content.list(lang, { where: 'a.category_id = @c', params: { c: c.id }, limit: 4 });
+        const l = (await content.list(lang, { where: 'a.category_id = @c', params: { c: c.id }, limit: 4 }));
         if (!l.length) continue;
         html += `<div class="w"><section class="sec">${C.sectionHead(c.name, categoryPath(lang, c.slug), t('all_categories'))}<div class="grid">${l.map((a) => C.card(ctx, a)).join('')}</div></section></div>`;
         if (++i % 3 === 0 && ads.between[(i / 3 - 1) % Math.max(ads.between.length, 1)]) html += `<div class="w">${C.adSlot(ctx, ads.between[(i / 3 - 1) % ads.between.length])}</div>`;
       }
       return html;
     },
-    interviews: () => typeSection(ctx, 'interview', t('interviews')),
-    investigations: () => typeSection(ctx, 'investigation', t('investigations')),
-    opinions: () => {
-      const l = content.list(lang, { where: "a.type = 'opinion'", limit: 6 });
+    interviews: async () => (await typeSection(ctx, 'interview', t('interviews'))),
+    investigations: async () => (await typeSection(ctx, 'investigation', t('investigations'))),
+    opinions: async () => {
+      const l = (await content.list(lang, { where: "a.type = 'opinion'", limit: 6 }));
       return l.length ? `<div class="w"><section class="sec">${C.sectionHead(t('opinions'))}<div class="op">${l.map((a) => `<a href="${articlePath(lang, a)}"><h3>${esc(a.title)}</h3><span class="meta">${esc(a.author)} · ${fmtDate(a.published_at, lang)}</span></a>`).join('')}</div></section></div>` : '';
     },
-    videos: () => {
-      const l = content.list(lang, { where: "a.type = 'video'", limit: 3 });
+    videos: async () => {
+      const l = (await content.list(lang, { where: "a.type = 'video'", limit: 3 }));
       return l.length ? `<div class="w"><section class="sec">${C.sectionHead(t('videos'))}<div class="vids">${l.map((a) => C.card(ctx, a)).join('')}</div></section></div>` : '';
     },
   };
-  const body = order.filter((k) => renders[k]).map((k) => renders[k]()).join('');
+  const parts = [];
+  for (const k of order) if (renders[k]) parts.push(await renders[k]());
+  const body = parts.join('');
   return body || `<div class="w"><p class="empty">${esc(t('no_articles'))}</p></div>`;
 }
-function typeSection(ctx, type, title) {
-  const l = content.list(ctx.lang, { where: 'a.type = @ty', params: { ty: type }, limit: 4 });
+async function typeSection(ctx, type, title) {
+  const l = (await content.list(ctx.lang, { where: 'a.type = @ty', params: { ty: type }, limit: 4 }));
   return l.length ? `<div class="w"><section class="sec">${C.sectionHead(title)}<div class="grid">${l.map((a) => C.card(ctx, a)).join('')}</div></section></div>` : '';
 }
 
@@ -69,13 +71,13 @@ function injectInlineAd(html, adHtml) {
   while ((m = re.exec(html))) { if (++n === 2) { idx = m.index + 4; break; } }
   return idx < 0 ? html + adHtml : html.slice(0, idx) + adHtml + html.slice(idx);
 }
-function article(ctx, a, { tags, related, latest, ads, commentsList, flash, formToken }) {
+async function article(ctx, a, { tags, related, latest, ads, commentsList, flash, formToken }) {
   const { lang, t } = ctx;
   const url = abs(articlePath(lang, a));
   const u = encodeURIComponent(url), ti = encodeURIComponent(a.title);
   const embed = a.type === 'video' && a.video_url ? videoEmbedUrl(a.video_url) : null;
   const cap = (lang === 'ar' ? a.caption_ar : a.caption_fr);
-  const auth = content.author(a.author_id);
+  const auth = (await content.author(a.author_id));
   const showComments = settings.bool('comments_enabled') && a.comments_enabled;
   return `<div class="w"><article class="art">
 <span class="tag"><a href="${categoryPath(lang, a.cat_slug)}">${esc(a.cat_name)}</a></span>${C.typeTag(ctx, a)}

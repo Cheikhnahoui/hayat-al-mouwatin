@@ -27,86 +27,86 @@ function decorate(r, lang) {
   return r;
 }
 
-function list(lang, { where = '', params = {}, order = 'a.published_at DESC', limit = 10, offset = 0 } = {}) {
+async function list(lang, { where = '', params = {}, order = 'a.published_at DESC', limit = 10, offset = 0 } = {}) {
   const sql = `${BASE} WHERE ${PUBLISHED} ${where ? 'AND ' + where : ''} ORDER BY ${order} LIMIT @limit OFFSET @offset`;
-  return db.prepare(sql).all({ lang, limit, offset, ...params }).map((r) => decorate(r, lang));
+  return (await db.prepare(sql).all({ lang, limit, offset, ...params })).map((r) => decorate(r, lang));
 }
-function count(lang, { where = '', params = {} } = {}) {
+async function count(lang, { where = '', params = {} } = {}) {
   const sql = `SELECT COUNT(*) n FROM articles a
     JOIN article_translations t ON t.article_id = a.id AND t.lang = @lang AND t.is_enabled = 1 AND t.title <> '' AND t.content <> ''
     JOIN categories c ON c.id = a.category_id AND c.is_active = 1
     JOIN category_translations ct ON ct.category_id = c.id AND ct.lang = @lang
     LEFT JOIN users u ON u.id = a.author_id
     WHERE ${PUBLISHED} ${where ? 'AND ' + where : ''}`;
-  return db.prepare(sql).get({ lang, ...params }).n;
+  return (await db.prepare(sql).get({ lang, ...params })).n;
 }
 
-function categories(lang, { onlyActive = true } = {}) {
-  return db.prepare(`
+async function categories(lang, { onlyActive = true } = {}) {
+  return (await db.prepare(`
     SELECT c.id, c.key, c.hue, c.sort_order, c.show_on_home, c.image_id, ct.name, ct.slug, ct.description, ct.seo_title, ct.seo_description,
            (SELECT file FROM media WHERE id = c.image_id) AS img_file
     FROM categories c JOIN category_translations ct ON ct.category_id = c.id AND ct.lang = ?
-    ${onlyActive ? 'WHERE c.is_active = 1' : ''} ORDER BY c.sort_order, c.id`).all(lang);
+    ${onlyActive ? 'WHERE c.is_active = 1' : ''} ORDER BY c.sort_order, c.id`).all(lang));
 }
-function categoryBySlug(lang, slug) {
-  return db.prepare(`
+async function categoryBySlug(lang, slug) {
+  return (await db.prepare(`
     SELECT c.id, c.key, c.hue, c.image_id, ct.name, ct.slug, ct.description, ct.seo_title, ct.seo_description
     FROM categories c JOIN category_translations ct ON ct.category_id = c.id AND ct.lang = ?
-    WHERE c.is_active = 1 AND ct.slug = ?`).get(lang, slug);
+    WHERE c.is_active = 1 AND ct.slug = ?`).get(lang, slug));
 }
-const categorySlugs = (id) => Object.fromEntries(db.prepare('SELECT lang, slug FROM category_translations WHERE category_id = ?').all(id).map((r) => [r.lang, r.slug]));
+const categorySlugs = async (id) => Object.fromEntries((await db.prepare('SELECT lang, slug FROM category_translations WHERE category_id = ?').all(id)).map((r) => [r.lang, r.slug]));
 
-function getArticle(id, lang) {
-  const r = db.prepare(`${BASE.replace('SELECT a.id,', 'SELECT t.content, a.id,')} WHERE a.id = @id AND ${PUBLISHED}`).get({ id, lang });
+async function getArticle(id, lang) {
+  const r = (await db.prepare(`${BASE.replace('SELECT a.id,', 'SELECT t.content, a.id,')} WHERE a.id = @id AND ${PUBLISHED}`).get({ id, lang }));
   return decorate(r, lang);
 }
 // which languages is this published article available in?
-function availableLangs(id) {
-  return db.prepare(`
+async function availableLangs(id) {
+  return (await db.prepare(`
     SELECT t.lang, t.slug FROM article_translations t JOIN articles a ON a.id = t.article_id
-    WHERE t.article_id = ? AND t.is_enabled = 1 AND t.title <> '' AND t.content <> '' AND ${PUBLISHED}`).all(id)
+    WHERE t.article_id = ? AND t.is_enabled = 1 AND t.title <> '' AND t.content <> '' AND ${PUBLISHED}`).all(id))
     .reduce((o, r) => ((o[r.lang] = r.slug), o), {});
 }
-function articleExists(id) {
-  return db.prepare(`SELECT 1 FROM articles a WHERE a.id = ? AND ${PUBLISHED}`).get(id);
+async function articleExists(id) {
+  return (await db.prepare(`SELECT 1 FROM articles a WHERE a.id = ? AND ${PUBLISHED}`).get(id));
 }
-function tagsFor(articleId, lang) {
-  return db.prepare(`SELECT tt.name, tt.slug FROM article_tags at JOIN tag_translations tt ON tt.tag_id = at.tag_id AND tt.lang = ?
-    WHERE at.article_id = ? ORDER BY tt.name`).all(lang, articleId);
+async function tagsFor(articleId, lang) {
+  return (await db.prepare(`SELECT tt.name, tt.slug FROM article_tags at JOIN tag_translations tt ON tt.tag_id = at.tag_id AND tt.lang = ?
+    WHERE at.article_id = ? ORDER BY tt.name`).all(lang, articleId));
 }
-function tagBySlug(lang, slug) { return db.prepare('SELECT tag_id, name, slug FROM tag_translations WHERE lang = ? AND slug = ?').get(lang, slug); }
+async function tagBySlug(lang, slug) { return (await db.prepare('SELECT tag_id, name, slug FROM tag_translations WHERE lang = ? AND slug = ?').get(lang, slug)); }
 
-function related(lang, art, n = 4) {
-  const tagIds = db.prepare('SELECT tag_id FROM article_tags WHERE article_id = ?').all(art.id).map((r) => r.tag_id);
+async function related(lang, art, n = 4) {
+  const tagIds = (await db.prepare('SELECT tag_id FROM article_tags WHERE article_id = ?').all(art.id)).map((r) => r.tag_id);
   const byTag = tagIds.length
-    ? list(lang, { where: `a.id <> @id AND a.id IN (SELECT article_id FROM article_tags WHERE tag_id IN (${tagIds.join(',')}))`, params: { id: art.id }, limit: n })
+    ? (await list(lang, { where: `a.id <> @id AND a.id IN (SELECT article_id FROM article_tags WHERE tag_id IN (${tagIds.join(',')}))`, params: { id: art.id }, limit: n }))
     : [];
   if (byTag.length >= n) return byTag;
   const have = [art.id, ...byTag.map((x) => x.id)];
-  const more = list(lang, { where: `a.category_id = @cat AND a.id NOT IN (${have.join(',')})`, params: { cat: art.category_id }, limit: n - byTag.length });
+  const more = (await list(lang, { where: `a.category_id = @cat AND a.id NOT IN (${have.join(',')})`, params: { cat: art.category_id }, limit: n - byTag.length }));
   return [...byTag, ...more];
 }
 
-function mostRead(lang, limit = 5, days = 30) {
-  return list(lang, { where: `a.published_at >= datetime('now', @since)`, params: { since: `-${days} days` }, order: 'a.view_count DESC, a.published_at DESC', limit });
+async function mostRead(lang, limit = 5, days = 30) {
+  return (await list(lang, { where: `a.published_at >= datetime('now', @since)`, params: { since: `-${days} days` }, order: 'a.view_count DESC, a.published_at DESC', limit }));
 }
-function trending(lang, limit = 5) {
-  return list(lang, {
+async function trending(lang, limit = 5) {
+  return (await list(lang, {
     where: `a.id IN (SELECT article_id FROM article_views WHERE day >= date('now','-2 days'))`,
     order: `(SELECT COALESCE(SUM(views),0) FROM article_views v WHERE v.article_id = a.id AND v.day >= date('now','-2 days')) DESC, a.published_at DESC`,
     limit,
-  });
+  }));
 }
-function breaking(lang) {
+async function breaking(lang) {
   if (!settings.bool('breaking_enabled')) return [];
   const n = Math.min(Math.max(parseInt(settings.get('breaking_count'), 10) || 5, 1), 15);
   const flagged = settings.get('breaking_mode') === 'flagged';
-  return list(lang, { where: flagged ? 'a.is_breaking = 1' : '1=1', limit: n });
+  return (await list(lang, { where: flagged ? 'a.is_breaking = 1' : '1=1', limit: n }));
 }
 
 // Search: title, summary, content, category name, author name; filters: category, date range, author
 function likeEsc(s) { return '%' + String(s).replace(/[\\%_]/g, (c) => '\\' + c) + '%'; }
-function search(lang, { q = '', category = 0, from = '', to = '', author = 0, tag = 0, page = 1, per = 12 }) {
+async function search(lang, { q = '', category = 0, from = '', to = '', author = 0, tag = 0, page = 1, per = 12 }) {
   const w = [], p = {};
   if (q) {
     w.push(`(t.title LIKE @q ESCAPE '\\' OR t.summary LIKE @q ESCAPE '\\' OR t.content LIKE @q ESCAPE '\\' OR ct.name LIKE @q ESCAPE '\\'
@@ -119,8 +119,8 @@ function search(lang, { q = '', category = 0, from = '', to = '', author = 0, ta
   if (/^\d{4}-\d{2}-\d{2}$/.test(from)) { w.push(`date(a.published_at) >= @from`); p.from = from; }
   if (/^\d{4}-\d{2}-\d{2}$/.test(to)) { w.push(`date(a.published_at) <= @to`); p.to = to; }
   const where = w.join(' AND ');
-  const total = count(lang, { where, params: p });
-  const items = list(lang, { where, params: p, limit: per, offset: (Math.max(page, 1) - 1) * per });
+  const total = (await count(lang, { where, params: p }));
+  const items = (await list(lang, { where, params: p, limit: per, offset: (Math.max(page, 1) - 1) * per }));
   return { items, total, pages: Math.max(1, Math.ceil(total / per)) };
 }
 
@@ -128,17 +128,17 @@ const readingMinutes = (html) => Math.max(1, Math.round(stripTags(html).split(/\
 
 // view counter (deduplicated in memory per visitor+article for 30 min)
 const seen = new Map();
-function countView(articleId, visitorKey) {
+async function countView(articleId, visitorKey) {
   const k = visitorKey + ':' + articleId, now = Date.now();
   if (seen.size > 20000) for (const [kk, t] of seen) if (now - t > 1800e3) seen.delete(kk);
   if (seen.has(k) && now - seen.get(k) < 1800e3) return;
   seen.set(k, now);
-  db.transaction(() => {
-    db.prepare('UPDATE articles SET view_count = view_count + 1 WHERE id = ?').run(articleId);
-    db.prepare(`INSERT INTO article_views (article_id, day, views) VALUES (?, date('now'), 1) ON CONFLICT(article_id, day) DO UPDATE SET views = views + 1`).run(articleId);
-  })();
+  (await db.transaction(async () => {
+    (await db.prepare('UPDATE articles SET view_count = view_count + 1 WHERE id = ?').run(articleId));
+    (await db.prepare(`INSERT INTO article_views (article_id, day, views) VALUES (?, date('now'), 1) ON CONFLICT(article_id, day) DO UPDATE SET views = views + 1`).run(articleId));
+  })());
 }
 
-function author(id) { return db.prepare('SELECT id, name_ar, name_fr, bio_ar, bio_fr, avatar FROM users WHERE id = ? AND is_active = 1').get(id); }
+async function author(id) { return (await db.prepare('SELECT id, name_ar, name_fr, bio_ar, bio_fr, avatar FROM users WHERE id = ? AND is_active = 1').get(id)); }
 
 module.exports = { list, count, categories, categoryBySlug, categorySlugs, getArticle, availableLangs, articleExists, tagsFor, tagBySlug, related, mostRead, trending, breaking, search, readingMinutes, countView, author, PUBLISHED };

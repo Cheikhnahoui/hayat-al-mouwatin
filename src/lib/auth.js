@@ -29,31 +29,31 @@ function checkPasswordPolicy(pw) {
 }
 
 // ---- permissions ----
-function permissionsFor(userId) {
-  const rows = db.prepare(`
-    SELECT r.key AS role FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ?`).all(userId);
+async function permissionsFor(userId) {
+  const rows = (await db.prepare(`
+    SELECT r.key AS role FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ?`).all(userId));
   const roles = rows.map((r) => r.role);
-  const perms = new Set(db.prepare(`
+  const perms = new Set((await db.prepare(`
     SELECT DISTINCT p.key FROM user_roles ur JOIN role_permissions rp ON rp.role_id = ur.role_id
-    JOIN permissions p ON p.id = rp.permission_id WHERE ur.user_id = ?`).all(userId).map((r) => r.key));
-  for (const o of db.prepare(`SELECT p.key, up.granted FROM user_permissions up JOIN permissions p ON p.id = up.permission_id WHERE up.user_id = ?`).all(userId)) {
+    JOIN permissions p ON p.id = rp.permission_id WHERE ur.user_id = ?`).all(userId)).map((r) => r.key));
+  for (const o of (await db.prepare(`SELECT p.key, up.granted FROM user_permissions up JOIN permissions p ON p.id = up.permission_id WHERE up.user_id = ?`).all(userId))) {
     if (o.granted) perms.add(o.key); else perms.delete(o.key);
   }
   return { roles, perms };
 }
 
 // ---- sessions ----
-function createSession(req, res, userId) {
+async function createSession(req, res, userId) {
   const raw = token(32);
   const csrf = token(24);
   const exp = new Date(Date.now() + config.sessionHours * 3600e3).toISOString().slice(0, 19).replace('T', ' ');
-  db.prepare('INSERT INTO sessions (id, user_id, csrf, ip, user_agent, expires_at) VALUES (?,?,?,?,?,?)')
-    .run(sha256(raw), userId, csrf, clientIp(req), String(req.get('user-agent') || '').slice(0, 200), exp);
+  (await db.prepare('INSERT INTO sessions (id, user_id, csrf, ip, user_agent, expires_at) VALUES (?,?,?,?,?,?)')
+    .run(sha256(raw), userId, csrf, clientIp(req), String(req.get('user-agent') || '').slice(0, 200), exp));
   res.cookie(COOKIE, raw, { httpOnly: true, sameSite: 'lax', secure: config.isProd, maxAge: config.sessionHours * 3600e3, path: '/' });
 }
-function destroySession(req, res) {
+async function destroySession(req, res) {
   const raw = parseCookies(req)[COOKIE];
-  if (raw) db.prepare('DELETE FROM sessions WHERE id = ?').run(sha256(raw));
+  if (raw) (await db.prepare('DELETE FROM sessions WHERE id = ?').run(sha256(raw)));
   res.clearCookie(COOKIE, { path: '/' });
 }
 function parseCookies(req) {
@@ -67,44 +67,44 @@ function parseCookies(req) {
 }
 
 // ---- login with lockout ----
-function attemptLogin(req, identifier) {
+async function attemptLogin(req, identifier) {
   const id = String(identifier || '').trim().toLowerCase().slice(0, 120);
-  const user = db.prepare('SELECT * FROM users WHERE lower(username) = ? OR lower(email) = ?').get(id, id);
+  const user = (await db.prepare('SELECT * FROM users WHERE lower(username) = ? OR lower(email) = ?').get(id, id));
   return { id, user };
 }
 function isLocked(user) {
   return user && user.locked_until && new Date(user.locked_until.replace(' ', 'T') + 'Z') > new Date();
 }
-function login(req, res, identifier, password) {
-  const { id, user } = attemptLogin(req, identifier);
-  const log = (ok) => db.prepare('INSERT INTO login_attempts (identifier, ip, success) VALUES (?,?,?)').run(id, clientIp(req), ok ? 1 : 0);
-  if (!user) { verifyPassword(password || '', DUMMY); log(false); return { error: 'invalid' }; }
-  if (isLocked(user)) { log(false); return { error: 'locked' }; }
+async function login(req, res, identifier, password) {
+  const { id, user } = (await attemptLogin(req, identifier));
+  const log = async (ok) => (await db.prepare('INSERT INTO login_attempts (identifier, ip, success) VALUES (?,?,?)').run(id, clientIp(req), ok ? 1 : 0));
+  if (!user) { verifyPassword(password || '', DUMMY); (await log(false)); return { error: 'invalid' }; }
+  if (isLocked(user)) { (await log(false)); return { error: 'locked' }; }
   if (!verifyPassword(password || '', user.password_hash)) {
     const fails = user.failed_logins + 1;
     if (fails >= MAX_FAILS) {
-      db.prepare(`UPDATE users SET failed_logins = 0, locked_until = datetime('now', ?) WHERE id = ?`).run(`+${LOCK_MIN} minutes`, user.id);
-    } else db.prepare('UPDATE users SET failed_logins = ? WHERE id = ?').run(fails, user.id);
-    log(false);
+      (await db.prepare(`UPDATE users SET failed_logins = 0, locked_until = datetime('now', ?) WHERE id = ?`).run(`+${LOCK_MIN} minutes`, user.id));
+    } else (await db.prepare('UPDATE users SET failed_logins = ? WHERE id = ?').run(fails, user.id));
+    (await log(false));
     return { error: fails >= MAX_FAILS ? 'locked' : 'invalid' };
   }
-  if (!user.is_active) { log(false); return { error: 'inactive' }; }
-  db.prepare(`UPDATE users SET failed_logins = 0, locked_until = NULL, last_login_at = datetime('now') WHERE id = ?`).run(user.id);
-  log(true);
-  createSession(req, res, user.id);
+  if (!user.is_active) { (await log(false)); return { error: 'inactive' }; }
+  (await db.prepare(`UPDATE users SET failed_logins = 0, locked_until = NULL, last_login_at = datetime('now') WHERE id = ?`).run(user.id));
+  (await log(true));
+  (await createSession(req, res, user.id));
   return { user };
 }
 
 // ---- middleware ----
-function loadUser(req, res, next) {
+async function loadUser(req, res, next) {
   req.user = null;
   const raw = parseCookies(req)[COOKIE];
   if (raw) {
-    const row = db.prepare(`
+    const row = (await db.prepare(`
       SELECT s.id AS sid, s.csrf, u.* FROM sessions s JOIN users u ON u.id = s.user_id
-      WHERE s.id = ? AND s.expires_at > datetime('now')`).get(sha256(raw));
+      WHERE s.id = ? AND s.expires_at > datetime('now')`).get(sha256(raw)));
     if (row && row.is_active) {
-      const { roles, perms } = permissionsFor(row.id);
+      const { roles, perms } = (await permissionsFor(row.id));
       req.user = { ...row, roles, perms, isSuper: roles.includes('super_admin') };
       req.csrf = row.csrf;
       req.can = (p) => req.user.isSuper || req.user.perms.has(p);
@@ -129,10 +129,10 @@ function csrfProtect(req, res, next) {
   if (sent && safeEqual(sent, req.csrf)) return next();
   return res.status(403).send('Invalid CSRF token');
 }
-function purgeExpired() {
-  db.prepare(`DELETE FROM sessions WHERE expires_at <= datetime('now')`).run();
-  db.prepare(`DELETE FROM login_attempts WHERE created_at < datetime('now','-30 days')`).run();
-  db.prepare(`DELETE FROM comment_throttle WHERE created_at < datetime('now','-1 day')`).run();
+async function purgeExpired() {
+  (await db.prepare(`DELETE FROM sessions WHERE expires_at <= datetime('now')`).run());
+  (await db.prepare(`DELETE FROM login_attempts WHERE created_at < datetime('now','-30 days')`).run());
+  (await db.prepare(`DELETE FROM comment_throttle WHERE created_at < datetime('now','-1 day')`).run());
 }
 
 module.exports = { hashPassword, verifyPassword, checkPasswordPolicy, permissionsFor, createSession, destroySession, parseCookies, login, loadUser, requireAuth, requirePerm, csrfProtect, purgeExpired, COOKIE };

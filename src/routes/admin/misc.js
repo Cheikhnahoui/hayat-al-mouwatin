@@ -14,28 +14,28 @@ const router = express.Router();
 const need = (...p) => (req, res, next) => (p.some((x) => req.can(x)) ? next() : res.forbidden());
 
 // ================= NOTIFICATIONS =================
-router.get('/notifications', (req, res) => {
+router.get('/notifications', async (req, res) => {
   const c = K.ctxFor(req), { L, lang } = c;
-  const rows = db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 100').all(req.user.id);
+  const rows = (await db.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 100').all(req.user.id));
   const body = `<div class="bar">${K.postForm(c, '/admin/notifications/read-all', `<button class="btn gh sm">${esc(L('تعليم الكل كمقروء', 'Tout marquer comme lu'))}</button>`)}</div>
 <div class="box">${rows.map((n) => `<div class="notif-item ${n.is_read ? '' : 'unread'}"><div>${n.link ? `<a href="/admin/notifications/${n.id}/open">${esc(lang === 'ar' ? n.message_ar : n.message_fr)}</a>` : esc(lang === 'ar' ? n.message_ar : n.message_fr)}<div class="meta-line">${K.dt(c, n.created_at)}</div></div>${n.is_read ? '' : K.postForm(c, `/admin/notifications/${n.id}/read`, `<button class="btn gh sm">✓</button>`)}</div>`).join('') || `<p class="meta">${esc(L('لا توجد إشعارات', 'Aucune notification'))}</p>`}</div>`;
   res.send(K.shell(c, { title: L('الإشعارات', 'Notifications'), active: '', body }));
 });
-router.post('/notifications/read-all', (req, res) => { db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ?').run(req.user.id); res.redirect('/admin/notifications'); });
-router.post('/notifications/:id/read', (req, res) => { db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?').run(+req.params.id, req.user.id); res.redirect('/admin/notifications'); });
-router.get('/notifications/:id/open', (req, res) => {
-  const n = db.prepare('SELECT * FROM notifications WHERE id = ? AND user_id = ?').get(+req.params.id, req.user.id);
+router.post('/notifications/read-all', async (req, res) => { (await db.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ?').run(req.user.id)); res.redirect('/admin/notifications'); });
+router.post('/notifications/:id/read', async (req, res) => { (await db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?').run(+req.params.id, req.user.id)); res.redirect('/admin/notifications'); });
+router.get('/notifications/:id/open', async (req, res) => {
+  const n = (await db.prepare('SELECT * FROM notifications WHERE id = ? AND user_id = ?').get(+req.params.id, req.user.id));
   if (!n) return res.redirect('/admin/notifications');
-  db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(n.id);
+  (await db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(n.id));
   res.redirect(n.link.startsWith('/admin') ? n.link : '/admin/notifications');
 });
 
 // ================= COMMENTS =================
-router.get('/comments', need('comments.moderate'), (req, res) => {
+router.get('/comments', need('comments.moderate'), async (req, res) => {
   const c = K.ctxFor(req), { L, lang } = c;
   const st = ['pending', 'approved', 'rejected', 'spam'].includes(req.query.status) ? req.query.status : 'pending';
-  const rows = db.prepare(`SELECT c.*, (SELECT title FROM article_translations WHERE article_id=c.article_id ORDER BY lang LIMIT 1) title FROM comments c WHERE c.status = ? ORDER BY c.reports DESC, c.id DESC LIMIT 100`).all(st);
-  const counts = Object.fromEntries(db.prepare('SELECT status, COUNT(*) n FROM comments GROUP BY status').all().map((r) => [r.status, r.n]));
+  const rows = (await db.prepare(`SELECT c.*, (SELECT title FROM article_translations WHERE article_id=c.article_id ORDER BY lang LIMIT 1) title FROM comments c WHERE c.status = ? ORDER BY c.reports DESC, c.id DESC LIMIT 100`).all(st));
+  const counts = Object.fromEntries((await db.prepare('SELECT status, COUNT(*) n FROM comments GROUP BY status').all()).map((r) => [r.status, r.n]));
   const LBL = { pending: ['بانتظار المراجعة', 'En attente'], approved: ['معتمدة', 'Approuvés'], rejected: ['مرفوضة', 'Rejetés'], spam: ['مزعجة', 'Spam'] };
   const act = (id, a, label, cls) => K.postForm(c, `/admin/comments/${id}/${a}`, `<button class="btn ${cls} sm">${esc(label)}</button>`);
   const body = `<div class="bar">${Object.keys(LBL).map((s) => `<a class="btn ${s === st ? '' : 'gh'} sm" href="/admin/comments?status=${s}">${esc(L(...LBL[s]))} (${counts[s] || 0})</a>`).join(' ')}</div>
@@ -43,22 +43,22 @@ router.get('/comments', need('comments.moderate'), (req, res) => {
   res.send(K.shell(c, { title: L('التعليقات', 'Commentaires'), active: 'comments', body }));
 });
 for (const [a, st] of [['approve', 'approved'], ['reject', 'rejected'], ['spam', 'spam']]) {
-  router.post(`/comments/:id/${a}`, need('comments.moderate'), (req, res) => {
-    db.prepare('UPDATE comments SET status = ?, reports = CASE WHEN ? = \'approved\' THEN 0 ELSE reports END WHERE id = ?').run(st, st, +req.params.id);
-    audit(req, 'comment.' + a, 'comment', req.params.id); res.redirect(req.get('referer')?.includes('/admin/comments') ? new URL(req.get('referer')).pathname + new URL(req.get('referer')).search : '/admin/comments');
+  router.post(`/comments/:id/${a}`, need('comments.moderate'), async (req, res) => {
+    (await db.prepare('UPDATE comments SET status = ?, reports = CASE WHEN ? = \'approved\' THEN 0 ELSE reports END WHERE id = ?').run(st, st, +req.params.id));
+    (await audit(req, 'comment.' + a, 'comment', req.params.id)); res.redirect(req.get('referer')?.includes('/admin/comments') ? new URL(req.get('referer')).pathname + new URL(req.get('referer')).search : '/admin/comments');
   });
 }
-router.post('/comments/:id/delete', need('comments.moderate'), (req, res) => {
-  db.prepare('DELETE FROM comments WHERE id = ?').run(+req.params.id);
-  audit(req, 'comment.delete', 'comment', req.params.id); res.redirect('/admin/comments?m=deleted');
+router.post('/comments/:id/delete', need('comments.moderate'), async (req, res) => {
+  (await db.prepare('DELETE FROM comments WHERE id = ?').run(+req.params.id));
+  (await audit(req, 'comment.delete', 'comment', req.params.id)); res.redirect('/admin/comments?m=deleted');
 });
 
 // ================= AUDIT =================
-router.get('/audit', need('audit.view'), (req, res) => {
+router.get('/audit', need('audit.view'), async (req, res) => {
   const c = K.ctxFor(req), { L } = c;
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1), per = 50;
-  const total = db.prepare('SELECT COUNT(*) n FROM audit_logs').get().n;
-  const rows = db.prepare(`SELECT l.*, u.username FROM audit_logs l LEFT JOIN users u ON u.id = l.user_id ORDER BY l.id DESC LIMIT ${per} OFFSET ${(page - 1) * per}`).all();
+  const total = (await db.prepare('SELECT COUNT(*) n FROM audit_logs').get()).n;
+  const rows = (await db.prepare(`SELECT l.*, u.username FROM audit_logs l LEFT JOIN users u ON u.id = l.user_id ORDER BY l.id DESC LIMIT ${per} OFFSET ${(page - 1) * per}`).all());
   const body = `<div class="box">${K.table([L('التاريخ', 'Date'), L('المستخدم', 'Utilisateur'), L('الإجراء', 'Action'), L('العنصر', 'Élément'), L('تفاصيل', 'Détails'), 'IP'],
     rows.map((r) => `<tr><td>${K.dt(c, r.created_at)}</td><td>${esc(r.username || '—')}</td><td>${esc(r.action)}</td><td>${esc(r.entity)} ${esc(r.entity_id)}</td><td>${esc(r.details)}</td><td>${esc(r.ip || '')}</td></tr>`))}
 <div class="pager">${page > 1 ? `<a href="?page=${page - 1}">‹</a>` : ''}<span class="cur">${page} / ${Math.max(1, Math.ceil(total / per))}</span>${page * per < total ? `<a href="?page=${page + 1}">›</a>` : ''}</div></div>`;
@@ -66,13 +66,13 @@ router.get('/audit', need('audit.view'), (req, res) => {
 });
 
 // ================= ANALYTICS =================
-router.get('/analytics', need('analytics.view'), (req, res) => {
+router.get('/analytics', need('analytics.view'), async (req, res) => {
   const c = K.ctxFor(req), { L, lang } = c;
   const days = [7, 30, 90].includes(+req.query.days) ? +req.query.days : 30;
-  const top = db.prepare(`SELECT a.id, (SELECT title FROM article_translations WHERE article_id=a.id ORDER BY lang LIMIT 1) title, SUM(v.views) views FROM article_views v JOIN articles a ON a.id=v.article_id WHERE v.day >= date('now', ?) GROUP BY a.id ORDER BY views DESC LIMIT 15`).all(`-${days} days`);
-  const cat = db.prepare(`SELECT ct.name, SUM(v.views) views FROM article_views v JOIN articles a ON a.id=v.article_id JOIN category_translations ct ON ct.category_id=a.category_id AND ct.lang=? WHERE v.day >= date('now', ?) GROUP BY a.category_id ORDER BY views DESC`).all(lang, `-${days} days`);
-  const auth_ = db.prepare(`SELECT u.id, u.name_ar, u.name_fr, u.username, COUNT(DISTINCT a.id) n, COALESCE(SUM(a.view_count),0) views FROM users u JOIN articles a ON a.author_id=u.id WHERE a.status='published' GROUP BY u.id ORDER BY views DESC LIMIT 10`).all();
-  const sum = db.prepare(`SELECT COALESCE(SUM(views),0) n FROM article_views WHERE day >= date('now', ?)`).get(`-${days} days`).n;
+  const top = (await db.prepare(`SELECT a.id, (SELECT title FROM article_translations WHERE article_id=a.id ORDER BY lang LIMIT 1) title, SUM(v.views) views FROM article_views v JOIN articles a ON a.id=v.article_id WHERE v.day >= date('now', ?) GROUP BY a.id ORDER BY views DESC LIMIT 15`).all(`-${days} days`));
+  const cat = (await db.prepare(`SELECT ct.name, SUM(v.views) views FROM article_views v JOIN articles a ON a.id=v.article_id JOIN category_translations ct ON ct.category_id=a.category_id AND ct.lang=? WHERE v.day >= date('now', ?) GROUP BY a.category_id ORDER BY views DESC`).all(lang, `-${days} days`));
+  const auth_ = (await db.prepare(`SELECT u.id, u.name_ar, u.name_fr, u.username, COUNT(DISTINCT a.id) n, COALESCE(SUM(a.view_count),0) views FROM users u JOIN articles a ON a.author_id=u.id WHERE a.status='published' GROUP BY u.id ORDER BY views DESC LIMIT 10`).all());
+  const sum = (await db.prepare(`SELECT COALESCE(SUM(views),0) n FROM article_views WHERE day >= date('now', ?)`).get(`-${days} days`)).n;
   const body = `<div class="bar">${[7, 30, 90].map((d) => `<a class="btn ${d === days ? '' : 'gh'} sm" href="?days=${d}">${d} ${esc(L('يوم', 'jours'))}</a>`).join(' ')}</div><div class="cards"><div class="box"><b>${num(sum, lang)}</b><span>${esc(L('مشاهدات الفترة', 'Vues sur la période'))}</span></div></div>
 <div class="two"><div class="box"><h3>${esc(L('الأكثر قراءة', 'Articles les plus lus'))}</h3>${K.table([L('المقال', 'Article'), L('المشاهدات', 'Vues')], top.map((t) => `<tr><td><a href="/admin/articles/${t.id}">${esc(t.title)}</a></td><td>${num(t.views, lang)}</td></tr>`))}</div>
 <div class="sidebar-stack"><div class="box"><h3>${esc(L('حسب التصنيف', 'Par catégorie'))}</h3>${K.table([L('التصنيف', 'Catégorie'), L('المشاهدات', 'Vues')], cat.map((t) => `<tr><td>${esc(t.name)}</td><td>${num(t.views, lang)}</td></tr>`))}</div>
@@ -82,9 +82,9 @@ router.get('/analytics', need('analytics.view'), (req, res) => {
 
 // ================= PROFILE =================
 const avatarUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: config.maxImageBytes, files: 1 } });
-function profile(req, res, err) {
+async function profile(req, res, err) {
   const c = K.ctxFor(req), { L } = c;
-  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  const u = (await db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id));
   const body = `${u.must_change_password ? `<div class="flash err">${esc(L('يجب تغيير كلمة المرور المؤقتة قبل المتابعة.', 'Vous devez changer votre mot de passe temporaire avant de continuer.'))}</div>` : ''}${err ? `<div class="flash err">${esc(L(...(K.ERR[err] || K.ERR.invalid)))}</div>` : ''}
 <div class="two"><form method="post" enctype="multipart/form-data" class="box f" action="/admin/profile?_csrf=${encodeURIComponent(c.csrf)}"><h3>${esc(L('ملفي الشخصي', 'Mon profil'))}</h3>
 <label>${esc(L('الاسم (عربي)', 'Nom (AR)'))}<input name="name_ar" dir="rtl" value="${esc(u.name_ar)}" maxlength="80"></label><label>${esc(L('الاسم (فرنسي)', 'Nom (FR)'))}<input name="name_fr" value="${esc(u.name_fr)}" maxlength="80"></label>
@@ -94,32 +94,32 @@ function profile(req, res, err) {
 <label>${esc(L('الحالية', 'Actuel'))}<input type="password" name="current" required autocomplete="current-password"></label><label>${esc(L('الجديدة (10 أحرف على الأقل)', 'Nouveau (10 caractères min.)'))}<input type="password" name="password" required minlength="10" autocomplete="new-password"></label><div><button class="btn">${esc(L('تغيير', 'Changer'))}</button></div></form></div>`;
   res.send(K.shell(c, { title: L('ملفي الشخصي', 'Mon profil'), active: '', body }));
 }
-router.get('/profile', (req, res) => profile(req, res));
+router.get('/profile', async (req, res) => (await profile(req, res)));
 router.post('/profile', (req, res) => {
   avatarUpload.single('avatar')(req, res, async (e) => {
-    if (e) return profile(req, res, 'too_large');
+    if (e) return (await profile(req, res, 'too_large'));
     const b = req.body || {};
     let avatar = null;
     if (req.file) {
       try { const m = await M.saveUpload(req.file, req.user.id, 'avatars'); if (m.kind !== 'image') throw new Error('x'); avatar = m.thumb || m.file; }
-      catch { return profile(req, res, 'unsupported'); }
+      catch { return (await profile(req, res, 'unsupported')); }
     }
-    db.prepare(`UPDATE users SET name_ar=@a, name_fr=@f, bio_ar=@ba, bio_fr=@bf, avatar=COALESCE(@av, avatar), updated_at=datetime('now') WHERE id=@id`)
-      .run({ a: text(b.name_ar).slice(0, 80), f: text(b.name_fr).slice(0, 80), ba: text(b.bio_ar).slice(0, 500), bf: text(b.bio_fr).slice(0, 500), av: avatar, id: req.user.id });
-    audit(req, 'profile.update', 'user', req.user.id);
+    (await db.prepare(`UPDATE users SET name_ar=@a, name_fr=@f, bio_ar=@ba, bio_fr=@bf, avatar=COALESCE(@av, avatar), updated_at=datetime('now') WHERE id=@id`)
+      .run({ a: text(b.name_ar).slice(0, 80), f: text(b.name_fr).slice(0, 80), ba: text(b.bio_ar).slice(0, 500), bf: text(b.bio_fr).slice(0, 500), av: avatar, id: req.user.id }));
+    (await audit(req, 'profile.update', 'user', req.user.id));
     res.redirect('/admin/profile?m=saved');
   });
 });
-router.post('/profile/password', (req, res) => {
-  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  if (!auth.verifyPassword(req.body.current || '', u.password_hash)) return profile(req, res, 'wrong_password');
+router.post('/profile/password', async (req, res) => {
+  const u = (await db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id));
+  if (!auth.verifyPassword(req.body.current || '', u.password_hash)) return (await profile(req, res, 'wrong_password'));
   const pe = auth.checkPasswordPolicy(req.body.password || '');
-  if (pe) return profile(req, res, pe);
-  db.prepare("UPDATE users SET password_hash=?, must_change_password=0, updated_at=datetime('now') WHERE id=?").run(auth.hashPassword(req.body.password), u.id);
+  if (pe) return (await profile(req, res, pe));
+  (await db.prepare("UPDATE users SET password_hash=?, must_change_password=0, updated_at=datetime('now') WHERE id=?").run(auth.hashPassword(req.body.password), u.id));
   // invalidate other sessions
   const cur = require('../../lib/util').sha256(auth.parseCookies(req)[auth.COOKIE] || '');
-  db.prepare('DELETE FROM sessions WHERE user_id = ? AND id <> ?').run(u.id, cur);
-  audit(req, 'user.change_password', 'user', u.id);
+  (await db.prepare('DELETE FROM sessions WHERE user_id = ? AND id <> ?').run(u.id, cur));
+  (await audit(req, 'user.change_password', 'user', u.id));
   res.redirect('/admin/profile?m=pw_changed');
 });
 
@@ -177,8 +177,8 @@ router.post('/settings', need('settings.manage'), (req, res) => {
       const f = req.files?.[k]?.[0];
       if (f) { try { const m = await M.saveUpload(f, req.user.id, 'branding'); if (m.kind === 'image') out[k] = '/uploads/' + (k === 'favicon' ? m.thumb || m.file : m.medium || m.file); } catch { return settingsPage(req, res, 'unsupported'); } }
     }
-    settings.set(out);
-    audit(req, 'settings.update', 'settings', '', Object.keys(out).join(','));
+    (await settings.set(out));
+    (await audit(req, 'settings.update', 'settings', '', Object.keys(out).join(',')));
     res.redirect('/admin/settings?m=saved');
   });
 });

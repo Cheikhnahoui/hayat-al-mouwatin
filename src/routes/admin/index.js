@@ -53,20 +53,20 @@ router.get('/login', (req, res) => {
   setLc(req, res);
   res.send(loginPage(req));
 });
-router.post('/login', loginLimiter, (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   const cookieTok = auth.parseCookies(req).hm_lc;
   if (!cookieTok || !req.body.lc || !safeEqual(cookieTok, req.body.lc)) { setLc(req, res); return res.status(403).send(loginPage(req, 'csrf')); }
-  const r = auth.login(req, res, req.body.identifier, req.body.password);
+  const r = (await auth.login(req, res, req.body.identifier, req.body.password));
   if (r.error) { setLc(req, res); return res.status(r.error === 'locked' ? 423 : 401).send(loginPage(req, r.error)); }
   req.user = { id: r.user.id };
-  audit(req, 'auth.login', 'user', r.user.id);
+  (await audit(req, 'auth.login', 'user', r.user.id));
   const next = String(req.body.next || '');
   res.clearCookie('hm_lc', { path: '/admin' });
   res.redirect(next.startsWith('/admin') && !next.startsWith('//') ? next : '/admin');
 });
-router.post('/logout', (req, res) => {
-  if (req.user) audit(req, 'auth.logout', 'user', req.user.id);
-  auth.destroySession(req, res);
+router.post('/logout', async (req, res) => {
+  if (req.user) (await audit(req, 'auth.logout', 'user', req.user.id));
+  (await auth.destroySession(req, res));
   res.redirect('/admin/login');
 });
 
@@ -77,8 +77,8 @@ router.use((req, res, next) => {
   if (req.user.must_change_password && !['/profile', '/logout', '/lang/ar', '/lang/fr'].includes(req.path)) return res.redirect('/admin/profile?e=short');
   next();
 });
-router.get('/lang/:l', (req, res) => {
-  if (['ar', 'fr'].includes(req.params.l)) db.prepare('UPDATE users SET ui_lang = ? WHERE id = ?').run(req.params.l, req.user.id);
+router.get('/lang/:l', async (req, res) => {
+  if (['ar', 'fr'].includes(req.params.l)) (await db.prepare('UPDATE users SET ui_lang = ? WHERE id = ?').run(req.params.l, req.user.id));
   res.redirect(String(req.get('referer') || '/admin').replace(/^https?:\/\/[^/]+/, '').startsWith('/admin') ? String(req.get('referer')).replace(/^https?:\/\/[^/]+/, '') : '/admin');
 });
 

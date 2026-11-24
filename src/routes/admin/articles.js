@@ -16,10 +16,10 @@ const seesAll = (req) => req.can('articles.edit_any') || req.can('articles.revie
 const backWith = (res, id, key, val) => res.redirect(`/admin/articles/${id}?${key}=${val}`);
 
 function run(fn) {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     const id = parseInt(req.params.id, 10);
     try {
-      const msg = fn(req, id);
+      const msg = await fn(req, id);
       res.redirect(`/admin/articles/${id}?m=${msg || 'done'}`);
     } catch (e) {
       if (e instanceof A.Denied) return res.forbidden();
@@ -30,7 +30,7 @@ function run(fn) {
 }
 
 // ---------- list ----------
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const c = K.ctxFor(req), { L, lang } = c;
   const status = Object.keys(K.STATUS_LABEL).includes(req.query.status) ? req.query.status : '';
   const q = String(req.query.q || '').trim().slice(0, 80);
@@ -42,14 +42,14 @@ router.get('/', (req, res) => {
   if (cat) { w.push('a.category_id = @cat'); p.cat = cat; }
   if (q) { w.push(`EXISTS (SELECT 1 FROM article_translations t WHERE t.article_id = a.id AND t.title LIKE @q)`); p.q = `%${q.replace(/[%_\\]/g, '')}%`; }
   const where = w.join(' AND ');
-  const total = db.prepare(`SELECT COUNT(*) n FROM articles a WHERE ${where}`).get(p).n;
-  const rows = db.prepare(`SELECT a.*, u.name_ar au_ar, u.name_fr au_fr, ct.name cat_name,
+  const total = (await db.prepare(`SELECT COUNT(*) n FROM articles a WHERE ${where}`).get(p)).n;
+  const rows = (await db.prepare(`SELECT a.*, u.name_ar au_ar, u.name_fr au_fr, ct.name cat_name,
       (SELECT title FROM article_translations WHERE article_id = a.id AND lang = @lang) t_here, (SELECT title FROM article_translations WHERE article_id = a.id ORDER BY lang LIMIT 1) t_any,
       (SELECT group_concat(lang) FROM article_translations WHERE article_id = a.id) langs
     FROM articles a LEFT JOIN users u ON u.id = a.author_id JOIN category_translations ct ON ct.category_id = a.category_id AND ct.lang = @lang
-    WHERE ${where} ORDER BY a.updated_at DESC LIMIT ${per} OFFSET ${(page - 1) * per}`).all({ ...p, lang });
-  const cats = db.prepare('SELECT c.id, ct.name FROM categories c JOIN category_translations ct ON ct.category_id = c.id AND ct.lang = ? ORDER BY c.sort_order').all(lang);
-  const counts = Object.fromEntries(db.prepare(`SELECT status, COUNT(*) n FROM articles a WHERE ${seesAll(req) ? '1=1' : 'a.author_id = ' + Number(req.user.id)} GROUP BY status`).all().map((r) => [r.status, r.n]));
+    WHERE ${where} ORDER BY a.updated_at DESC LIMIT ${per} OFFSET ${(page - 1) * per}`).all({ ...p, lang }));
+  const cats = (await db.prepare('SELECT c.id, ct.name FROM categories c JOIN category_translations ct ON ct.category_id = c.id AND ct.lang = ? ORDER BY c.sort_order').all(lang));
+  const counts = Object.fromEntries((await db.prepare(`SELECT status, COUNT(*) n FROM articles a WHERE ${seesAll(req) ? '1=1' : 'a.author_id = ' + Number(req.user.id)} GROUP BY status`).all()).map((r) => [r.status, r.n]));
   const tabs = ['', ...Object.keys(K.STATUS_LABEL)].map((s) => `<a class="btn ${s === status ? '' : 'gh'} sm" href="/admin/articles?status=${s}">${esc(s ? L(...K.STATUS_LABEL[s]) : L('الكل', 'Tous'))}${s ? ` (${counts[s] || 0})` : ''}</a>`).join(' ');
   const pages = Math.max(1, Math.ceil(total / per));
   const qs = (n) => `/admin/articles?${new URLSearchParams({ status, q, category: cat || '', page: n }).toString()}`;
@@ -62,22 +62,22 @@ ${K.table([L('العنوان', 'Titre'), L('الحالة', 'Statut'), L('الت�
 });
 
 // ---------- form ----------
-function formPage(req, res, art, values, errKey) {
+async function formPage(req, res, art, values, errKey) {
   const c = K.ctxFor(req), { L, lang } = c;
   const isNew = !art;
-  const tr = art ? A.translations(art.id) : {};
+  const tr = art ? (await A.translations(art.id)) : {};
   const v = (k, d = '') => (values && k in values ? values[k] : d);
   const val = (l, f) => v(`${f}_${l}`, tr[l] ? tr[l][f] : '');
-  const cats = db.prepare('SELECT c.id, ct.name FROM categories c JOIN category_translations ct ON ct.category_id = c.id AND ct.lang = ? ORDER BY c.sort_order').all(lang);
-  const image = art && art.image_id ? db.prepare('SELECT * FROM media WHERE id = ?').get(art.image_id) : null;
+  const cats = (await db.prepare('SELECT c.id, ct.name FROM categories c JOIN category_translations ct ON ct.category_id = c.id AND ct.lang = ? ORDER BY c.sort_order').all(lang));
+  const image = art && art.image_id ? (await db.prepare('SELECT * FROM media WHERE id = ?').get(art.image_id)) : null;
   const imgId = v('image_id', art?.image_id || '');
-  const imgRow = imgId ? db.prepare('SELECT * FROM media WHERE id = ?').get(imgId) : null;
-  const tagNames = (l) => (art ? db.prepare('SELECT tt.name FROM article_tags at JOIN tag_translations tt ON tt.tag_id = at.tag_id AND tt.lang = ? WHERE at.article_id = ?').all(l, art.id).map((r) => r.name).join(', ') : '');
-  const authors = req.can('articles.edit_any') ? db.prepare(`SELECT id, name_ar, name_fr, username FROM users WHERE is_active = 1 ORDER BY name_ar`).all() : [];
+  const imgRow = imgId ? (await db.prepare('SELECT * FROM media WHERE id = ?').get(imgId)) : null;
+  const tagNames = async (l) => (art ? (await db.prepare('SELECT tt.name FROM article_tags at JOIN tag_translations tt ON tt.tag_id = at.tag_id AND tt.lang = ? WHERE at.article_id = ?').all(l, art.id)).map((r) => r.name).join(', ') : '');
+  const authors = req.can('articles.edit_any') ? (await db.prepare(`SELECT id, name_ar, name_fr, username FROM users WHERE is_active = 1 ORDER BY name_ar`).all()) : [];
   const editable = isNew || A.canEdit(req, art);
   const dis = editable ? '' : 'disabled';
 
-  const pane = (l, on) => {
+  const pane = async (l, on) => {
     const dir = l === 'ar' ? 'rtl' : 'ltr';
     const en = values ? values[`enabled_${l}`] !== '0' : tr[l] ? !!tr[l].is_enabled : true;
     return `<div class="pane ${on ? 'on' : ''}" dir="${dir}">
@@ -89,12 +89,12 @@ ${editable ? `<div class="ed-tb" aria-label="editor"><button type="button" data-
 <textarea id="content_${l}" name="content_${l}" hidden>${esc(val(l, 'content'))}</textarea>
 <div class="row2"><label>SEO ${l === 'ar' ? 'العنوان' : 'Title'}<input name="seo_title_${l}" value="${esc(val(l, 'seo_title'))}" maxlength="120" ${dis}></label>
 <label>SEO ${l === 'ar' ? 'الوصف' : 'Description'}<input name="seo_description_${l}" value="${esc(val(l, 'seo_description'))}" maxlength="300" ${dis}></label></div>
-<label>${l === 'ar' ? 'الوسوم (مفصولة بفاصلة)' : 'Mots-clés (séparés par des virgules)'}<input name="tags_${l}" value="${esc(v(`tags_${l}`, tagNames(l)))}" ${dis}></label>
+<label>${l === 'ar' ? 'الوسوم (مفصولة بفاصلة)' : 'Mots-clés (séparés par des virgules)'}<input name="tags_${l}" value="${esc(v(`tags_${l}`, (await tagNames(l))))}" ${dis}></label>
 <label class="chk"><input type="checkbox" name="enabled_${l}" value="1" ${en ? 'checked' : ''} ${dis}> ${esc(L(l === 'ar' ? 'نشر النسخة العربية' : 'نشر النسخة الفرنسية', l === 'ar' ? 'Publier la version arabe' : 'Publier la version française'))}</label></div>`;
   };
 
   const form = `<form method="post" class="f" data-editor action="${isNew ? '/admin/articles' : `/admin/articles/${art.id}/save`}">${K.csrfField(c)}
-<div class="box" data-tabs><div class="tabs" role="tablist"><button type="button" class="on">العربية</button><button type="button">Français</button></div>${pane('ar', true)}${pane('fr', false)}</div>
+<div class="box" data-tabs><div class="tabs" role="tablist"><button type="button" class="on">العربية</button><button type="button">Français</button></div>${(await pane('ar', true))}${(await pane('fr', false))}</div>
 <div class="box"><h3>${esc(L('الإعدادات', 'Paramètres'))}</h3><div class="row2">
 <label>${esc(L('التصنيف', 'Catégorie'))}<select name="category_id" ${dis}>${cats.map((x) => `<option value="${x.id}" ${String(v('category_id', art?.category_id)) === String(x.id) ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
 <label>${esc(L('النوع', 'Type'))}<select name="type" ${dis}>${A.TYPES.map((x) => `<option value="${x}" ${v('type', art?.type || 'news') === x ? 'selected' : ''}>${esc({ news: L('خبر', 'Actualité'), opinion: L('رأي/تحليل', 'Opinion/analyse'), interview: L('حوار', 'Interview'), investigation: L('تحقيق', 'Enquête'), video: L('فيديو', 'Vidéo') }[x])}</option>`).join('')}</select></label>
@@ -126,8 +126,8 @@ ${editable ? `<button class="btn">${esc(L('حفظ', 'Enregistrer'))}</button>` :
     if (req.can('articles.feature') && s === 'published') {
       feat = `<form method="post" action="/admin/articles/${art.id}/feature" class="f box">${K.csrfField(c)}<h3>${esc(L('الواجهة', 'Mise en avant'))}</h3><label>${esc(L('موقع الظهور', 'Emplacement'))}<select name="slot"><option value="">${esc(L('بدون', 'Aucun'))}</option><option value="main" ${art.featured_slot === 'main' ? 'selected' : ''}>${esc(L('الخبر الرئيسي', 'Titre principal'))}</option><option value="secondary" ${art.featured_slot === 'secondary' ? 'selected' : ''}>${esc(L('خبر ثانوي', 'Secondaire'))}</option></select></label><label class="chk"><input type="checkbox" name="breaking" value="1" ${art.is_breaking ? 'checked' : ''}> ${esc(L('شريط العاجل', 'Bandeau urgent'))}</label><button class="btn sm">${esc(L('تطبيق', 'Appliquer'))}</button></form>`;
     }
-    const first = db.prepare("SELECT lang, slug FROM article_translations WHERE article_id = ? ORDER BY lang LIMIT 1").get(art.id);
-    const live = s === 'published' ? content.availableLangs(art.id) : null;
+    const first = (await db.prepare("SELECT lang, slug FROM article_translations WHERE article_id = ? ORDER BY lang LIMIT 1").get(art.id));
+    const live = s === 'published' ? (await content.availableLangs(art.id)) : null;
     side = `<div class="box"><h3>${K.badge(c, s)}</h3>
 ${art.review_note ? `<div class="flash err"><b>${esc(L('ملاحظة المحرر', 'Note du rédacteur'))}:</b> ${esc(art.review_note)}</div>` : ''}
 <p class="meta-line">${esc(L('أُنشئ', 'Créé'))}: ${K.dt(c, art.created_at)}<br>${esc(L('عُدّل', 'Modifié'))}: ${K.dt(c, art.updated_at)}${art.published_at ? `<br>${esc(L('نُشر', 'Publié'))}: ${K.dt(c, art.published_at)}` : ''}${art.publish_at ? `<br>${esc(L('مجدول', 'Programmé'))}: ${K.dt(c, art.publish_at)} UTC` : ''}<br>${num(art.view_count, lang)} ${esc(L('مشاهدة', 'vues'))}</p>
@@ -141,59 +141,59 @@ ${live ? Object.entries(live).map(([l, sl]) => `<p><a href="${articlePath(l, { i
   res.send(html);
 }
 
-router.get('/new', guard('articles.create'), (req, res) => formPage(req, res, null, null, null));
-router.post('/', (req, res, next) => {
+router.get('/new', guard('articles.create'), async (req, res) => (await formPage(req, res, null, null, null)));
+router.post('/', async (req, res, next) => {
   try {
-    const id = A.save(req, null, normalize(req.body));
+    const id = (await A.save(req, null, normalize(req.body)));
     res.redirect(`/admin/articles/${id}?m=saved`);
   } catch (e) {
     if (e instanceof A.Denied) return res.forbidden();
-    if (e instanceof A.Invalid) return formPage(req, res, null, req.body, e.message);
+    if (e instanceof A.Invalid) return (await formPage(req, res, null, req.body, e.message));
     next(e);
   }
 });
 const normalize = (b) => ({ ...b, enabled_ar: b.enabled_ar ? '1' : '0', enabled_fr: b.enabled_fr ? '1' : '0', comments_enabled: b.comments_enabled ? '1' : '0', publish_at: fromInput(b.publish_at) });
 
-router.get('/:id', (req, res, next) => {
-  const art = A.getRow(parseInt(req.params.id, 10));
+router.get('/:id', async (req, res, next) => {
+  const art = (await A.getRow(parseInt(req.params.id, 10)));
   if (!art) return next();
   if (!canView(req, art)) return res.forbidden();
-  formPage(req, res, art, null, req.query.e && !K.ERR[req.query.e] ? 'invalid' : null);
+  (await formPage(req, res, art, null, req.query.e && !K.ERR[req.query.e] ? 'invalid' : null));
 });
-router.post('/:id/save', (req, res, next) => {
+router.post('/:id/save', async (req, res, next) => {
   const id = parseInt(req.params.id, 10);
   try {
-    A.save(req, id, normalize(req.body));
+    (await A.save(req, id, normalize(req.body)));
     res.redirect(`/admin/articles/${id}?m=saved`);
   } catch (e) {
     if (e instanceof A.Denied) return res.forbidden();
-    if (e instanceof A.Invalid) return formPage(req, res, A.getRow(id), req.body, e.message);
+    if (e instanceof A.Invalid) return (await formPage(req, res, (await A.getRow(id)), req.body, e.message));
     next(e);
   }
 });
-router.post('/:id/submit', run((req, id) => { A.submit(req, id); return 'submitted'; }));
-router.post('/:id/approve', run((req, id) => { A.approve(req, id); return 'approved'; }));
-router.post('/:id/reject', run((req, id) => { A.reject(req, id, req.body.note); return 'rejected'; }));
-router.post('/:id/publish', run((req, id) => { A.publish(req, id); return 'published'; }));
-router.post('/:id/schedule', run((req, id) => { A.schedule(req, id, fromInput(req.body.publish_at)); return 'scheduled'; }));
-router.post('/:id/unpublish', run((req, id) => { A.unpublish(req, id); return 'unpublished'; }));
-router.post('/:id/archive', run((req, id) => { A.archive(req, id); return 'archived'; }));
-router.post('/:id/restore', run((req, id) => { A.restore(req, id); return 'restored'; }));
-router.post('/:id/feature', run((req, id) => { A.setFeature(req, id, { slot: req.body.slot || null, breaking: req.body.breaking === '1' }); return 'saved'; }));
-router.post('/:id/delete', (req, res, next) => {
-  try { A.remove(req, parseInt(req.params.id, 10)); res.redirect('/admin/articles?m=deleted'); } catch (e) { if (e instanceof A.Denied) return res.forbidden(); next(e); }
+router.post('/:id/submit', run(async (req, id) => { (await A.submit(req, id)); return 'submitted'; }));
+router.post('/:id/approve', run(async (req, id) => { (await A.approve(req, id)); return 'approved'; }));
+router.post('/:id/reject', run(async (req, id) => { (await A.reject(req, id, req.body.note)); return 'rejected'; }));
+router.post('/:id/publish', run(async (req, id) => { (await A.publish(req, id)); return 'published'; }));
+router.post('/:id/schedule', run(async (req, id) => { (await A.schedule(req, id, fromInput(req.body.publish_at))); return 'scheduled'; }));
+router.post('/:id/unpublish', run(async (req, id) => { (await A.unpublish(req, id)); return 'unpublished'; }));
+router.post('/:id/archive', run(async (req, id) => { (await A.archive(req, id)); return 'archived'; }));
+router.post('/:id/restore', run(async (req, id) => { (await A.restore(req, id)); return 'restored'; }));
+router.post('/:id/feature', run(async (req, id) => { (await A.setFeature(req, id, { slot: req.body.slot || null, breaking: req.body.breaking === '1' })); return 'saved'; }));
+router.post('/:id/delete', async (req, res, next) => {
+  try { (await A.remove(req, parseInt(req.params.id, 10))); res.redirect('/admin/articles?m=deleted'); } catch (e) { if (e instanceof A.Denied) return res.forbidden(); next(e); }
 });
 
-router.get('/:id/revisions', (req, res, next) => {
+router.get('/:id/revisions', async (req, res, next) => {
   const c = K.ctxFor(req), { L } = c;
-  const art = A.getRow(parseInt(req.params.id, 10));
+  const art = (await A.getRow(parseInt(req.params.id, 10)));
   if (!art) return next();
   if (!canView(req, art)) return res.forbidden();
-  const revs = db.prepare('SELECT r.*, u.username FROM article_revisions r LEFT JOIN users u ON u.id = r.user_id WHERE r.article_id = ? ORDER BY r.id DESC').all(art.id);
+  const revs = (await db.prepare('SELECT r.*, u.username FROM article_revisions r LEFT JOIN users u ON u.id = r.user_id WHERE r.article_id = ? ORDER BY r.id DESC').all(art.id));
   const body = `<div class="box">${K.table(['#', L('التاريخ', 'Date'), L('المستخدم', 'Utilisateur'), L('ملاحظة', 'Note'), ''],
     revs.map((r) => `<tr><td>${r.id}</td><td>${K.dt(c, r.created_at)}</td><td>${esc(r.username || '—')}</td><td>${esc(r.note)}</td><td>${A.canEdit(req, art) ? K.postForm(c, `/admin/articles/${art.id}/revisions/${r.id}/restore`, `<button class="btn gh sm">${esc(L('استعادة هذه النسخة', 'Restaurer'))}</button>`, { confirm: L('استعادة هذه النسخة؟', 'Restaurer cette version ?') }) : ''}</td></tr>`))}</div>`;
   res.send(K.shell(c, { title: L('سجل المراجعات', 'Historique des révisions'), active: 'articles', back: `/admin/articles/${art.id}`, body }));
 });
-router.post('/:id/revisions/:rid/restore', run((req, id) => { A.restoreRevision(req, id, parseInt(req.params.rid, 10)); return 'restored'; }));
+router.post('/:id/revisions/:rid/restore', run(async (req, id) => { (await A.restoreRevision(req, id, parseInt(req.params.rid, 10))); return 'restored'; }));
 
 module.exports = router;
