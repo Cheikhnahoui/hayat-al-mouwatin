@@ -395,3 +395,14 @@ test('every public and admin page renders for a super admin (200/redirect only)'
     '/admin/comments', '/admin/ads', '/admin/ads/new', '/admin/users', '/admin/users/new', '/admin/users/1', '/admin/notifications', '/admin/analytics', '/admin/audit', '/admin/settings', '/admin/profile', '/admin/dashboard', '/admin/news'];
   for (const p of pages) { const r = await boss.get(p); assert.ok(r.status < 400, `${p} -> ${r.status}`); }
 });
+
+test('public site no longer links to the admin panel; /ar/admin and /fr/admin redirect to /admin', async () => {
+  for (const l of ['ar', 'fr']) {
+    const html = (await new Client().get(`/${l}`)).text_;
+    assert.ok(!/href="\/admin"/.test(html), `${l} home must not link to /admin`);
+    const r = await new Client().get(`/${l}/admin`);
+    assert.equal(r.status, 302); assert.equal(r.headers.get('location'), '/admin');
+  }
+  assert.equal((await new Client().get('/admin')).status, 302); // -> login
+  assert.match((await new Client().get('/admin/login')).text_, /name="identifier"/);
+});

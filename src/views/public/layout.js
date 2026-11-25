@@ -53,7 +53,7 @@ ${page.extraHead || ''}
 ${page.jsonld ? `<script type="application/ld+json">${JSON.stringify(page.jsonld).replace(/</g, '\\u003c')}</script>` : ''}
 </head><body>
 <a class="skip" href="#main">${esc(t('skip'))}</a>
-<div class="top"><div class="w"><span>${fmtDate(new Date().toISOString(), lang)}</span><span class="acts">${social.join('')}${langs.length > 1 ? `<a class="langbtn" href="${esc(switchHref)}" hreflang="${other}" lang="${other}">${esc(t('switch_lang'))}</a>` : ''}<a href="/admin">${esc(t('admin'))}</a></span></div></div>
+<div class="top"><div class="w"><span>${fmtDate(new Date().toISOString(), lang)}</span><span class="acts">${social.join('')}${langs.length > 1 ? `<a class="langbtn" href="${esc(switchHref)}" hreflang="${other}" lang="${other}">${esc(t('switch_lang'))}</a>` : ''}</span></div></div>
 <header class="hd"><div class="w"><a class="logo" href="/${lang}"><img class="mk" alt="" src="${esc(s.logo)}" width="60" height="60"><span><b>${esc(siteName)}</b><small>${esc(lang === 'ar' ? s.site_name_fr.toUpperCase() : s.site_name_ar)}</small></span></a>
 <button class="menu-btn" type="button" aria-expanded="false" aria-controls="mainnav" data-menu>☰ ${esc(t('menu'))}</button>
 <form class="sr" action="/${lang}/search" method="get" role="search"><input name="q" type="search" placeholder="${esc(t('search_ph'))}" aria-label="${esc(t('search'))}" value="${esc(ctx.q || '')}" maxlength="100"><button aria-label="${esc(t('search'))}">⌕</button></form></div></header>

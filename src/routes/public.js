@@ -85,6 +85,9 @@ router.use('/:lang', async (req, res, next) => {
 const intParam = (v, d = 0) => { const n = parseInt(v, 10); return Number.isFinite(n) && n > 0 ? n : d; };
 const page = (req) => Math.min(intParam(req.query.page, 1), 1000);
 
+// the admin panel lives at /admin only; forgive a language prefix typed in front of it
+L.get(['/admin', '/admin/*splat'], (req, res) => res.redirect(302, '/admin'));
+
 L.get('/', async (req, res) => {
   const { ctx } = req;
   const adsCtx = { sidebar: (await ads.pick('home_sidebar', { isBot: isBot(req) })), between: [(await ads.pick('home_between', { isBot: isBot(req) }))].filter(Boolean) };
