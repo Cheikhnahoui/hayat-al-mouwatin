@@ -3,7 +3,7 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 30,
-      "includeFiles": "{public/**,src/db/migrations/**}"
+      "includeFiles": "{public/**,src/db/migrations/**,node_modules/@libsql/**,node_modules/libsql/**,node_modules/@neon-rs/**,node_modules/@img/**}"
     }
   },
   "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }],

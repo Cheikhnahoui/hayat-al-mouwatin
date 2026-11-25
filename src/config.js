@@ -30,8 +30,7 @@ const config = {
 };
 
 if (isProd && (config.appSecret.length < 32 || config.appSecret.startsWith('change-me'))) {
-  console.error('FATAL: APP_SECRET must be set to a random string of at least 32 characters in production.');
-  process.exit(1);
+  throw new Error('FATAL: APP_SECRET must be set to a random string of at least 32 characters in production.');
 }
 if (!config.appSecret) config.appSecret = 'dev-only-secret-' + require('crypto').randomBytes(16).toString('hex');
 
