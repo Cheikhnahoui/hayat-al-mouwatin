@@ -91,7 +91,8 @@ function createApp() {
     console.error(`[error] ${req.method} ${req.originalUrl}`, err);
     if (res.headersSent) return;
     if (err.type === 'entity.too.large') return res.status(413).send('Payload too large');
-    res.status(err.status && err.status < 500 ? err.status : 500).type('text/plain').send(config.isProd ? 'Internal error' : String(err.stack || err));
+    const debug = !config.isProd || process.env.DEBUG_STARTUP === '1'; // DEBUG_STARTUP=1 shows error details (temporary, for diagnosis)
+    res.status(err.status && err.status < 500 ? err.status : 500).type('text/plain').send(debug ? String(err.stack || err) : 'Internal error');
   });
   return app;
 }

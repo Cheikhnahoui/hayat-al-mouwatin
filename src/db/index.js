@@ -12,13 +12,20 @@ if (config.databaseUrl.startsWith('file:')) fs.mkdirSync(path.dirname(config.dat
 const client = createClient({ url: config.databaseUrl, authToken: config.databaseToken || undefined });
 const als = new AsyncLocalStorage();
 
-function norm(args) {
+// Normalise arguments. Hosted libSQL (Turso) is strict: it rejects named parameters that the SQL does not
+// use ("too many parameters"), unlike the local engine. Queries here build their SQL conditionally, so unused
+// named parameters are dropped before sending.
+function norm(args, sql) {
   if (args.length === 1 && args[0] && typeof args[0] === 'object' && !Array.isArray(args[0])) {
-    return Object.fromEntries(Object.entries(args[0]).map(([k, v]) => [k, v === undefined ? null : v]));
+    const out = {};
+    for (const [k, v] of Object.entries(args[0])) {
+      if (new RegExp('[:@$]' + k + '\\b').test(sql)) out[k] = v === undefined ? null : v;
+    }
+    return out;
   }
   return args.flat().map((v) => (v === undefined ? null : typeof v === 'boolean' ? +v : v));
 }
-const exec = (sql, args) => (als.getStore() || client).execute({ sql, args: norm(args) });
+const exec = (sql, args) => (als.getStore() || client).execute({ sql, args: norm(args, sql) });
 const plain = (row) => ({ ...row });
 
 function prepare(sql) {

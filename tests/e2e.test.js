@@ -289,3 +289,109 @@ test('security headers', async () => {
   assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
   assert.equal((await new Client().get('/admin/login')).headers.get('cache-control'), 'no-store');
 });
+
+// ===================== every way of publishing a news article =====================
+test('setup: re-enable both languages after the settings test', async () => {
+  const settings = require('../src/lib/settings');
+  await settings.set({ available_langs: 'ar,fr', default_lang: 'ar', home_sections: settings.DEFAULTS.home_sections });
+  assert.deepEqual(settings.langs(), ['ar', 'fr']);
+});
+
+const png = () => sharp({ create: { width: 1200, height: 800, channels: 3, background: '#8b1220' } }).png().toBuffer();
+async function uploadImage(client) {
+  const fd = new FormData(); fd.append('files', new Blob([await png()], { type: 'image/png' }), 'photo.png');
+  const r = JSON.parse((await client.multipart('/admin/media/upload?json=1', fd)).text_);
+  return r.items[0].id;
+}
+const slugOf = async (id, lang) => (await db.prepare('SELECT slug FROM article_translations WHERE article_id=? AND lang=?').get(id, lang)).slug;
+const pubPath = async (id, lang) => `/${lang}/article/${id}-${encodeURIComponent(await slugOf(id, lang))}`;
+
+test('publish method 1: super admin writes in Arabic only, with image + tags, publishes immediately', async () => {
+  const boss = new Client(); await boss.login('boss');
+  const img = await uploadImage(boss);
+  const r = await boss.p('/admin/articles', { title_ar: 'خبر عربي مباشر', summary_ar: 'ملخص', content_ar: '<h2>عنوان</h2><p>نص</p><blockquote>اقتباس</blockquote>', enabled_ar: '1', category_id: '3', type: 'news', image_id: String(img), tags_ar: 'اختبار, نشر', comments_enabled: '1' });
+  const id = idFrom(r, /articles\/(\d+)/);
+  assert.equal((await boss.p(`/admin/articles/${id}/publish`, {})).status, 302);
+  assert.equal((await db.prepare('SELECT status FROM articles WHERE id=?').get(id)).status, 'published');
+  const page = await new Client().get(await pubPath(id, 'ar'));
+  assert.equal(page.status, 200); assert.match(page.text_, /srcset=/); assert.match(page.text_, /<blockquote>/); assert.match(page.text_, /#اختبار/);
+  const cat = (await db.prepare("SELECT slug FROM category_translations WHERE category_id=3 AND lang='ar'").get()).slug;
+  const cp = await new Client().get(`/ar/category/${encodeURIComponent(cat)}`);
+  assert.equal(cp.status, 200); assert.match(cp.text_, /خبر عربي مباشر/);
+  const tag = (await db.prepare("SELECT slug FROM tag_translations WHERE lang='ar' AND name='اختبار'").get()).slug;
+  assert.match((await new Client().get(`/ar/tag/${encodeURIComponent(tag)}`)).text_, /خبر عربي مباشر/);
+  assert.match((await new Client().get(`/ar/author/${(await db.prepare("SELECT id FROM users WHERE username='boss'").get()).id}`)).text_, /خبر عربي مباشر/);
+  assert.ok(!(await new Client().get('/fr')).text_.includes('خبر عربي مباشر'));
+  assert.match((await new Client().get(`/fr/article/${id}`)).text_, /pas encore de version française/);
+});
+
+test('publish method 2: French only', async () => {
+  const boss = new Client(); await boss.login('boss');
+  const r = await boss.p('/admin/articles', { title_fr: 'Article français seul', content_fr: '<p>Bonjour</p>', enabled_fr: '1', category_id: '4', type: 'news' });
+  const id = idFrom(r, /articles\/(\d+)/);
+  await boss.p(`/admin/articles/${id}/publish`, {});
+  assert.equal((await new Client().get(await pubPath(id, 'fr'))).status, 200);
+  assert.match((await new Client().get(`/ar/article/${id}`)).text_, /الفرنسية/);
+  assert.match((await new Client().get('/fr')).text_, /Article français seul/);
+});
+
+test('publish method 3: both languages + video type with embedded YouTube; bad video URL rejected', async () => {
+  const boss = new Client(); await boss.login('boss');
+  const bad = await boss.p('/admin/articles', { title_ar: 'س', content_ar: '<p>x</p>', enabled_ar: '1', category_id: '1', type: 'video', video_url: 'https://evil.example/x' });
+  assert.equal(bad.status, 200); assert.match(bad.text_, /flash err/);
+  const r = await boss.p('/admin/articles', { title_ar: 'فيديو ثنائي', content_ar: '<p>وصف</p>', enabled_ar: '1', title_fr: 'Vidéo bilingue', content_fr: '<p>Desc</p>', enabled_fr: '1', category_id: '1', type: 'video', video_url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', seo_title_ar: 'عنوان سيو', seo_description_ar: 'وصف سيو' });
+  const id = idFrom(r, /articles\/(\d+)/);
+  await boss.p(`/admin/articles/${id}/publish`, {});
+  const ar = (await new Client().get(await pubPath(id, 'ar'))).text_;
+  assert.match(ar, /youtube\.com\/embed\/dQw4w9WgXcQ/); assert.match(ar, /عنوان سيو/);
+  const fr = (await new Client().get(await pubPath(id, 'fr'))).text_;
+  assert.match(fr, /hreflang="ar"/); assert.match(fr, /hreflang="fr"/);
+  assert.match((await new Client().get('/ar')).text_, /فيديو ثنائي/); // video section on home
+});
+
+test('publish method 4: editor writes and publishes directly; admin approves a journalist article; reject then resubmit', async () => {
+  const ed = new Client(); await ed.login('ed');
+  const r1 = await ed.p('/admin/articles', { title_ar: 'من المحرر', content_ar: '<p>x</p>', enabled_ar: '1', category_id: '2', type: 'interview' });
+  const id1 = idFrom(r1, /articles\/(\d+)/);
+  await ed.p(`/admin/articles/${id1}/publish`, {});
+  assert.equal((await db.prepare('SELECT status FROM articles WHERE id=?').get(id1)).status, 'published');
+  const jo = new Client(); await jo.login('jo');
+  const r2 = await jo.p('/admin/articles', { title_ar: 'من الصحفي', content_ar: '<p>y</p>', enabled_ar: '1', category_id: '5', type: 'opinion' });
+  const id2 = idFrom(r2, /articles\/(\d+)/);
+  await jo.p(`/admin/articles/${id2}/submit`, {});
+  const adm = new Client(); await adm.login('adm');
+  await adm.p(`/admin/articles/${id2}/reject`, { note: 'تعديل' });
+  assert.equal((await db.prepare('SELECT status FROM articles WHERE id=?').get(id2)).status, 'rejected');
+  assert.equal((await jo.p(`/admin/articles/${id2}/save`, { title_ar: 'من الصحفي (معدّل)', content_ar: '<p>y2</p>', enabled_ar: '1', category_id: '5', type: 'opinion' })).status, 302);
+  await jo.p(`/admin/articles/${id2}/submit`, {});
+  await adm.p(`/admin/articles/${id2}/approve`, {});
+  assert.equal((await db.prepare('SELECT status FROM articles WHERE id=?').get(id2)).status, 'published');
+  const home = (await new Client().get('/ar')).text_;
+  assert.match(home, /من المحرر/); assert.match(home, /من الصحفي \(معدّل\)/);
+});
+
+test('publish method 5: schedule from the editor form; delete removes everything', async () => {
+  const adm = new Client(); await adm.login('adm');
+  const future = new Date(Date.now() + 7200e3).toISOString().slice(0, 16);
+  const r = await adm.p('/admin/articles', { title_ar: 'مجدول بالنموذج', content_ar: '<p>x</p>', enabled_ar: '1', category_id: '1', publish_at: future });
+  const id = idFrom(r, /articles\/(\d+)/);
+  await adm.p(`/admin/articles/${id}/schedule`, { publish_at: future });
+  assert.equal((await db.prepare('SELECT status FROM articles WHERE id=?').get(id)).status, 'scheduled');
+  assert.equal((await new Client().get(`/ar/article/${id}-x`)).status, 404);
+  await db.prepare("UPDATE articles SET publish_at = datetime('now','-1 minute') WHERE id=?").run(id);
+  assert.equal(await articles.publishDue(), 1);
+  assert.equal((await new Client().get(await pubPath(id, 'ar'))).status, 200);
+  await adm.p(`/admin/articles/${id}/delete`, {});
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM articles WHERE id=?').get(id)).n, 0);
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM article_translations WHERE article_id=?').get(id)).n, 0);
+});
+
+test('every public and admin page renders for a super admin (200/redirect only)', async () => {
+  const boss = new Client(); await boss.login('boss');
+  const cats = await db.prepare('SELECT slug, lang FROM category_translations').all();
+  const pages = ['/ar', '/fr', '/ar/search', '/ar/search?q=خبر', '/fr/search?q=a&category=1&from=2026-01-01&to=2027-01-01', '/ar/feed.xml', '/sitemap.xml', '/robots.txt',
+    ...cats.map((c) => `/${c.lang}/category/${encodeURIComponent(c.slug)}`), ...cats.map((c) => `/${c.lang}/category/${encodeURIComponent(c.slug)}?page=2`),
+    '/admin', '/admin/articles', '/admin/articles/new', '/admin/articles?status=pending', '/admin/categories', '/admin/categories/new', '/admin/categories/1', '/admin/tags', '/admin/media', '/admin/media/list.json',
+    '/admin/comments', '/admin/ads', '/admin/ads/new', '/admin/users', '/admin/users/new', '/admin/users/1', '/admin/notifications', '/admin/analytics', '/admin/audit', '/admin/settings', '/admin/profile', '/admin/dashboard', '/admin/news'];
+  for (const p of pages) { const r = await boss.get(p); assert.ok(r.status < 400, `${p} -> ${r.status}`); }
+});

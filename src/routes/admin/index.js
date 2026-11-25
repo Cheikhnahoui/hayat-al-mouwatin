@@ -90,8 +90,10 @@ router.use('/ads', require('./ads'));
 router.use('/users', require('./users'));
 router.use('/', require('./misc'));
 
+// friendly aliases for common guesses
+for (const [from, to] of [['/dashboard', '/admin'], ['/news', '/admin/articles'], ['/posts', '/admin/articles'], ['/article', '/admin/articles'], ['/articles/add', '/admin/articles/new'], ['/news/new', '/admin/articles/new'], ['/add', '/admin/articles/new']]) router.get(from, (req, res) => res.redirect(to));
 router.use((req, res) => {
   const c = K.ctxFor(req);
-  res.status(404).send(K.shell(c, { title: '404', active: '', body: `<div class="box"><p>${esc(c.L('الصفحة غير موجودة', 'Page introuvable'))}</p></div>` }));
+  res.status(404).send(K.shell(c, { title: '404', active: '', body: `<div class="box"><p>${esc(c.L('الصفحة غير موجودة', 'Page introuvable'))}</p><p class="meta-line" dir="ltr">${esc(req.originalUrl)}</p><p><a class="btn" href="/admin">${esc(c.L('العودة إلى لوحة التحكم', 'Retour au tableau de bord'))}</a></p></div>` }));
 });
 module.exports = router;
