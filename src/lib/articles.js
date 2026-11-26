@@ -253,6 +253,9 @@ async function restoreRevision(req, id, revId) {
       (await db.prepare(`INSERT INTO article_translations (article_id, lang, title, slug, summary, content, seo_title, seo_description, is_enabled) VALUES (?,?,?,?,?,?,?,?,?)`)
         .run(id, t.lang, t.title, t.slug, t.summary, rich(t.content), t.seo_title, t.seo_description, t.is_enabled));
     }
+    // the snapshot also stores tag ids: restore them too (skipping tags deleted since)
+    (await db.prepare('DELETE FROM article_tags WHERE article_id = ?').run(id));
+    for (const tid of s.tags || []) (await db.prepare('INSERT OR IGNORE INTO article_tags (article_id, tag_id) SELECT ?, id FROM tags WHERE id = ?').run(id, tid));
     (await revision(id, req.user.id, `restored #${revId}`));
   })());
   (await audit(req, 'article.revision_restore', 'article', id, `rev ${revId}`));

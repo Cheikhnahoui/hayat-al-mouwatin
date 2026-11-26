@@ -31,7 +31,7 @@
     return null;
   }
   var activeEd = null;
-  $$('.ed').forEach(function (ed) {
+  $$('.ed[data-for]').forEach(function (ed) { // read-only articles render a plain .ed without data-for
     var ta = document.getElementById(ed.getAttribute('data-for'));
     ed.innerHTML = ta.value;
     ed.addEventListener('focus', function () { activeEd = ed; });
@@ -61,7 +61,7 @@
     document.execCommand('insertText', false, txt);
   });
   // sync before submit
-  $$('form[data-editor]').forEach(function (f) { f.addEventListener('submit', function () { $$('.ed', f).forEach(function (ed) { document.getElementById(ed.getAttribute('data-for')).value = ed.innerHTML; }); }); });
+  $$('form[data-editor]').forEach(function (f) { f.addEventListener('submit', function () { $$('.ed[data-for]', f).forEach(function (ed) { document.getElementById(ed.getAttribute('data-for')).value = ed.innerHTML; }); }); });
 
   // ---------- media picker ----------
   var modal = $('#mediaModal'), cb = null, only = 'image';

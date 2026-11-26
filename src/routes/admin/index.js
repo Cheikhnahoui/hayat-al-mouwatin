@@ -23,7 +23,7 @@ router.use(auth.csrfProtect);
 
 // ---------- login / logout ----------
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 15, standardHeaders: true, legacyHeaders: false, skipSuccessfulRequests: true,
-  handler: (req, res) => res.status(429).send(loginPage(req, 'rate')) });
+  handler: (req, res) => { setLc(req, res); res.status(429).send(loginPage(req, 'rate')); } });
 
 function loginPage(req, error) {
   const lang = req.query.l === 'fr' ? 'fr' : req.query.l === 'ar' ? 'ar' : (auth.parseCookies(req).hm_lang === 'fr' ? 'fr' : 'ar');
@@ -72,9 +72,13 @@ router.post('/logout', async (req, res) => {
 
 // everything below requires a session
 router.use(auth.requireAuth);
+router.use(async (req, res, next) => {
+  req.unread = (await db.prepare('SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND is_read = 0').get(req.user.id)).n;
+  next();
+});
 router.use((req, res, next) => {
   // force password change after an admin reset
-  if (req.user.must_change_password && !['/profile', '/logout', '/lang/ar', '/lang/fr'].includes(req.path)) return res.redirect('/admin/profile?e=short');
+  if (req.user.must_change_password && !['/profile', '/profile/password', '/logout', '/lang/ar', '/lang/fr'].includes(req.path)) return res.redirect('/admin/profile?e=short');
   next();
 });
 router.get('/lang/:l', async (req, res) => {

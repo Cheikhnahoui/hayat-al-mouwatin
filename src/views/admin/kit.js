@@ -44,7 +44,7 @@ const btn = (label, cls = 'btn') => `<button class="${cls}">${esc(label)}</butto
 
 function shell(c, { title, active, body, back }) {
   const { L, lang, user } = c;
-  const unread = require('../../db').prepare('SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND is_read = 0').get(user.id).n;
+  const unread = c.req.unread || 0; // counted once per request in routes/admin/index.js (db calls are async)
   const s = settings.all();
   const m = c.req.query.m, e = c.req.query.e;
   const flash = (m && MSG[m] ? `<div class="flash" role="status">${esc(L(...MSG[m]))}</div>` : '') + (e ? `<div class="flash err" role="alert">${esc(ERR[e] ? L(...ERR[e]) : L(...ERR.invalid))}</div>` : '');

@@ -35,7 +35,8 @@ const clientIp = (req) => req.ip || req.socket?.remoteAddress || '';
 
 function fmtDate(sql, lang, withTime = false) {
   if (!sql) return '';
-  const d = new Date(String(sql).replace(' ', 'T') + 'Z');
+  const iso = String(sql).replace(' ', 'T');
+  const d = new Date(/(Z|[+-]\d\d:?\d\d)$/i.test(iso) ? iso : iso + 'Z'); // SQL datetimes (UTC) and ISO strings that already carry a zone
   if (isNaN(d)) return '';
   const o = { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' };
   if (withTime) { o.hour = '2-digit'; o.minute = '2-digit'; }
