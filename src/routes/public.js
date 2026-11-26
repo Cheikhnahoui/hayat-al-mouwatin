@@ -51,9 +51,12 @@ router.get('/sitemap.xml', async (req, res) => {
     const map = Object.fromEntries(langs.filter((l) => s[l]).map((l) => [l, categoryPath(l, s[l])]));
     for (const l of Object.keys(map)) urls.push({ loc: map[l], alt: alt(map), pr: '0.6' });
   }
-  const arts = (await db.prepare(`SELECT a.id, a.updated_at FROM articles a WHERE ${content.PUBLISHED} ORDER BY a.published_at DESC LIMIT 5000`).all());
-  for (const a of arts) {
-    const av = (await content.availableLangs(a.id));
+  // one query for every translation (one query per article means thousands of round-trips on Turso)
+  const trs = (await db.prepare(`SELECT a.id, a.updated_at, t.lang, t.slug FROM articles a JOIN article_translations t ON t.article_id = a.id AND t.is_enabled = 1 AND t.title <> '' AND t.content <> '' WHERE ${content.PUBLISHED} ORDER BY a.published_at DESC, a.id DESC LIMIT 10000`).all());
+  const byArt = new Map();
+  for (const r of trs) { if (!byArt.has(r.id)) byArt.set(r.id, { id: r.id, updated_at: r.updated_at, av: {} }); byArt.get(r.id).av[r.lang] = r.slug; }
+  for (const a of byArt.values()) {
+    const av = a.av;
     const map = Object.fromEntries(langs.filter((l) => av[l]).map((l) => [l, articlePath(l, { id: a.id, slug: av[l] })]));
     for (const l of Object.keys(map)) urls.push({ loc: map[l], alt: alt(map), last: a.updated_at, pr: '0.8' });
   }
@@ -75,7 +78,7 @@ router.use('/:lang', async (req, res, next) => {
   };
   // pick banner ads only for pages that show them
   ctx.adTop = req.path === '/' ? (await ads.pick('home_top', { isBot: isBot(req) })) : null;
-  ctx.adFooter = (await ads.pick('footer', { isBot: isBot(req) }));
+  ctx.adFooter = req.method === 'GET' && req.path !== '/feed.xml' ? (await ads.pick('footer', { isBot: isBot(req) })) : null; // no impressions for POSTs / RSS
   req.ctx = ctx;
   res.cookie('hm_lang', lang, { maxAge: 365 * 864e5, sameSite: 'lax', secure: config.isProd, path: '/' });
   res.page = (page, status = 200) => res.status(status).type('html').send(layout(ctx, page));
@@ -90,7 +93,11 @@ L.get(['/admin', '/admin/*splat'], (req, res) => res.redirect(302, '/admin'));
 
 L.get('/', async (req, res) => {
   const { ctx } = req;
-  const adsCtx = { sidebar: (await ads.pick('home_sidebar', { isBot: isBot(req) })), between: [(await ads.pick('home_between', { isBot: isBot(req) }))].filter(Boolean) };
+  const secs = settings.get('home_sections').split(',');
+  const adsCtx = {
+    sidebar: secs.includes('latest') ? (await ads.pick('home_sidebar', { isBot: isBot(req) })) : null,
+    between: secs.includes('categories') ? [(await ads.pick('home_between', { isBot: isBot(req) }))].filter(Boolean) : [],
+  };
   res.page({ body: (await P.home(ctx, adsCtx)), nav: 'home', alternates: { ar: '/ar', fr: '/fr' }, canonical: '/' + ctx.lang,
     jsonld: { '@context': 'https://schema.org', '@type': 'WebSite', name: ctx.lang === 'ar' ? settings.get('site_name_ar') : settings.get('site_name_fr'), url: abs('/' + ctx.lang), inLanguage: ctx.lang,
       potentialAction: { '@type': 'SearchAction', target: abs(`/${ctx.lang}/search?q={q}`), 'query-input': 'required name=q' } } });
@@ -169,7 +176,8 @@ L.get('/category/:slug', async (req, res, next) => {
   const total = (await content.count(lang, { where, params }));
   const pages = Math.max(1, Math.ceil(total / PER_PAGE));
   const featured = pg === 1 ? (await content.list(lang, { where, params, limit: 1 }))[0] : null;
-  const items = (await content.list(lang, { where: where + (featured ? ' AND a.id <> @f' : ''), params: { ...params, f: featured?.id }, limit: PER_PAGE, offset: (pg - 1) * PER_PAGE }));
+  // page 1 shows the featured article + (PER_PAGE - 1) others, so page 2 (offset PER_PAGE) does not repeat one
+  const items = (await content.list(lang, { where: where + (featured ? ' AND a.id <> @f' : ''), params: { ...params, f: featured?.id }, limit: featured ? PER_PAGE - 1 : PER_PAGE, offset: (pg - 1) * PER_PAGE }));
   const slugs = (await content.categorySlugs(cat.id));
   const alternates = Object.fromEntries(settings.langs().filter((l) => slugs[l]).map((l) => [l, categoryPath(l, slugs[l])]));
   res.page({

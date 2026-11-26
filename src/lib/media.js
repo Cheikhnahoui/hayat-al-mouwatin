@@ -53,7 +53,11 @@ function sniff(buf) {
   if (buf.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return { kind: 'image', mime: 'image/png' };
   if (buf.slice(0, 4).toString('ascii') === 'GIF8') return { kind: 'image', mime: 'image/gif' };
   if (buf.slice(0, 4).toString('ascii') === 'RIFF' && buf.slice(8, 12).toString('ascii') === 'WEBP') return { kind: 'image', mime: 'image/webp' };
-  if (buf.slice(4, 8).toString('ascii') === 'ftyp') return { kind: 'video', mime: 'video/mp4', ext: 'mp4' };
+  if (buf.slice(4, 8).toString('ascii') === 'ftyp') {
+    // HEIC / AVIF photos share the ISO-BMFF container with MP4: reject them instead of storing a photo as a "video"
+    if (/^(heic|heix|hevc|hevx|mif1|msf1|avif|avis)$/.test(buf.slice(8, 12).toString('ascii'))) return null;
+    return { kind: 'video', mime: 'video/mp4', ext: 'mp4' };
+  }
   if (buf.slice(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))) return { kind: 'video', mime: 'video/webm', ext: 'webm' };
   return null;
 }

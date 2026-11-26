@@ -79,7 +79,7 @@ async function formPage(req, res, art, values, errKey) {
 
   const pane = async (l, on) => {
     const dir = l === 'ar' ? 'rtl' : 'ltr';
-    const en = values ? values[`enabled_${l}`] !== '0' : tr[l] ? !!tr[l].is_enabled : true;
+    const en = values ? values[`enabled_${l}`] === '1' : tr[l] ? !!tr[l].is_enabled : true; // an unchecked box is absent from the POST body
     return `<div class="pane ${on ? 'on' : ''}" dir="${dir}">
 <label>${l === 'ar' ? 'العنوان' : 'Titre'}<input name="title_${l}" value="${esc(val(l, 'title'))}" maxlength="250" ${dis} ${l === 'ar' ? 'lang="ar"' : 'lang="fr"'}></label>
 <label>${l === 'ar' ? 'الملخص' : 'Résumé'}<textarea name="summary_${l}" rows="3" maxlength="600" ${dis}>${esc(val(l, 'summary'))}</textarea></label>
