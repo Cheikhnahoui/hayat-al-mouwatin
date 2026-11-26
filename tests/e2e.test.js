@@ -416,3 +416,26 @@ test('admin URL variants redirect to the right page instead of 404', async () =>
     assert.equal((await boss.get(to)).status, 200, to);
   }
 });
+
+test('CSRF: stale token from the same site is accepted; cross-site and header-less posts are refused', async () => {
+  const ed = new Client(); await ed.login('ed');
+  const host = new URL(base).origin;
+  const post = (headers, body = {}) => ed.req('/admin/notifications/read-all', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', ...headers }, body: new URLSearchParams(body).toString() });
+  assert.equal((await post({ origin: host }, { _csrf: 'stale-token' })).status, 302, 'same-origin with stale token');
+  assert.equal((await post({ origin: host })).status, 302, 'same-origin without token');
+  assert.equal((await post({ referer: host + '/admin' })).status, 302, 'same-origin via Referer');
+  const evil = await post({ origin: 'https://evil.example' }, { _csrf: 'stale-token' });
+  assert.equal(evil.status, 403); assert.match(evil.text_, /<html/); // friendly page, not raw text
+  assert.equal((await post({}, {})).status, 403, 'no origin and no token');
+  assert.equal((await post({ origin: 'https://evil.example' }, { _csrf: ed.csrf })).status, 302, 'a valid token always works');
+});
+
+test('logging in again from a browser that already has a session works', async () => {
+  const c = new Client(); await c.login('adm');
+  const other = new Client(); const f = await other.get('/admin/login');
+  const lc2 = f.text_.match(/name="lc" value="([^"]+)"/)[1];
+  other.jar.hm_sid = c.jar.hm_sid; // stale tab: the browser already holds a valid session cookie
+  const r = await other.req('/admin/login', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', origin: new URL(base).origin }, body: new URLSearchParams({ identifier: 'adm', password: PW, lc: lc2 }).toString() });
+  assert.equal(r.status, 302); assert.equal(r.headers.get('location'), '/admin');
+  assert.equal((await other.get('/admin')).status, 200);
+});

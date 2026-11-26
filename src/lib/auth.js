@@ -91,6 +91,8 @@ async function login(req, res, identifier, password) {
   if (!user.is_active) { (await log(false)); return { error: 'inactive' }; }
   (await db.prepare(`UPDATE users SET failed_logins = 0, locked_until = NULL, last_login_at = datetime('now') WHERE id = ?`).run(user.id));
   (await log(true));
+  const oldRaw = parseCookies(req)[COOKIE];
+  if (oldRaw) await db.prepare('DELETE FROM sessions WHERE id = ?').run(sha256(oldRaw));
   (await createSession(req, res, user.id));
   return { user };
 }
@@ -122,12 +124,36 @@ const requirePerm = (...perms) => (req, res, next) => {
   if (perms.some((p) => req.can(p))) return next();
   return res.forbidden ? res.forbidden() : res.status(403).send('Forbidden');
 };
+// A browser always sends the Origin (or at least Referer) header on a form POST, and a different website cannot forge it.
+// So a POST whose Origin/Referer is this very site is genuinely same-site, even if the page it came from carries a
+// stale token (old tab, new login in another tab, redeploy). Cross-site requests still need a valid token.
+function sameOrigin(req) {
+  const src = req.get('origin') || req.get('referer');
+  if (!src) return false;
+  try {
+    const host = new URL(src).host.toLowerCase();
+    const mine = [req.get('x-forwarded-host'), req.get('host')].filter(Boolean).map((h) => String(h).split(',')[0].trim().toLowerCase());
+    return mine.includes(host);
+  } catch { return false; }
+}
+function csrfPage(req) {
+  const ar = (req.user && req.user.ui_lang) !== 'fr';
+  return `<!DOCTYPE html><html lang="${ar ? 'ar' : 'fr'}" dir="${ar ? 'rtl' : 'ltr'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${ar ? 'انتهت صلاحية الصفحة' : 'Page expirée'}</title></head>
+<body style="font-family:Cairo,Arial,sans-serif;max-width:560px;margin:15vh auto;padding:0 16px;line-height:1.8"><h1 style="color:#8b1220">${ar ? 'انتهت صلاحية هذه الصفحة' : 'Cette page a expiré'}</h1>
+<p>${ar ? 'لم يتم تنفيذ العملية لأن الصفحة قديمة. افتح لوحة التحكم من جديد ثم أعد المحاولة.' : 'L’action n’a pas été effectuée car la page est ancienne. Rouvrez le tableau de bord puis réessayez.'}</p>
+<p><a href="/admin" style="background:#8b1220;color:#fff;padding:8px 18px;border-radius:4px;text-decoration:none">${ar ? 'العودة إلى لوحة التحكم' : 'Retour au tableau de bord'}</a></p></body></html>`;
+}
 function csrfProtect(req, res, next) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   if (!req.user) return next(); // unauthenticated POSTs (login) have their own protection
   const sent = req.body?._csrf || req.get('x-csrf-token') || req.query?._csrf;
   if (sent && safeEqual(sent, req.csrf)) return next();
-  return res.status(403).send('Invalid CSRF token');
+  if (sameOrigin(req)) {
+    console.warn('[csrf] token missing/stale but same-origin request accepted', JSON.stringify({ path: req.originalUrl.split('?')[0], hadToken: !!sent, bodyKeys: Object.keys(req.body || {}).length }));
+    return next();
+  }
+  console.warn('[csrf] rejected', JSON.stringify({ path: req.originalUrl.split('?')[0], hadToken: !!sent, origin: req.get('origin') || null }));
+  return res.status(403).type('html').send(csrfPage(req));
 }
 async function purgeExpired() {
   (await db.prepare(`DELETE FROM sessions WHERE expires_at <= datetime('now')`).run());
