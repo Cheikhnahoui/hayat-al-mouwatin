@@ -53,18 +53,6 @@ router.post('/comments/:id/delete', need('comments.moderate'), async (req, res) 
   (await audit(req, 'comment.delete', 'comment', req.params.id)); res.redirect('/admin/comments?m=deleted');
 });
 
-// ================= AUDIT =================
-router.get('/audit', need('audit.view'), async (req, res) => {
-  const c = K.ctxFor(req), { L } = c;
-  const page = Math.max(parseInt(req.query.page, 10) || 1, 1), per = 50;
-  const total = (await db.prepare('SELECT COUNT(*) n FROM audit_logs').get()).n;
-  const rows = (await db.prepare(`SELECT l.*, u.username FROM audit_logs l LEFT JOIN users u ON u.id = l.user_id ORDER BY l.id DESC LIMIT ${per} OFFSET ${(page - 1) * per}`).all());
-  const body = `<div class="box">${K.table([L('التاريخ', 'Date'), L('المستخدم', 'Utilisateur'), L('الإجراء', 'Action'), L('العنصر', 'Élément'), L('تفاصيل', 'Détails'), 'IP'],
-    rows.map((r) => `<tr><td>${K.dt(c, r.created_at)}</td><td>${esc(r.username || '—')}</td><td>${esc(r.action)}</td><td>${esc(r.entity)} ${esc(r.entity_id)}</td><td>${esc(r.details)}</td><td>${esc(r.ip || '')}</td></tr>`))}
-<div class="pager">${page > 1 ? `<a href="?page=${page - 1}">‹</a>` : ''}<span class="cur">${page} / ${Math.max(1, Math.ceil(total / per))}</span>${page * per < total ? `<a href="?page=${page + 1}">›</a>` : ''}</div></div>`;
-  res.send(K.shell(c, { title: L('سجل العمليات', 'Journal d’audit'), active: 'audit', body }));
-});
-
 // ================= ANALYTICS =================
 router.get('/analytics', need('analytics.view'), async (req, res) => {
   const c = K.ctxFor(req), { L, lang } = c;

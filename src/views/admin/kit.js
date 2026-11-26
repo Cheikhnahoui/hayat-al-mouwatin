@@ -23,13 +23,11 @@ const NAV = [
   ['dashboard', '/admin', '▦', ['لوحة المعلومات', 'Tableau de bord'], null],
   ['articles', '/admin/articles', '✎', ['المقالات', 'Articles'], ['articles.create', 'articles.edit_own', 'articles.edit_any', 'articles.review']],
   ['categories', '/admin/categories', '☰', ['التصنيفات', 'Catégories'], ['categories.manage']],
-  ['tags', '/admin/tags', '#', ['الوسوم', 'Tags'], ['tags.manage']],
   ['media', '/admin/media', '▣', ['الوسائط', 'Médias'], ['media.upload', 'media.manage']],
   ['comments', '/admin/comments', '✉', ['التعليقات', 'Commentaires'], ['comments.moderate']],
   ['ads', '/admin/ads', '◎', ['الإعلانات', 'Publicités'], ['ads.manage', 'ads.stats']],
   ['users', '/admin/users', '☻', ['المستخدمون', 'Utilisateurs'], ['users.view', 'users.manage', 'journalists.manage']],
   ['analytics', '/admin/analytics', '↗', ['الإحصاءات', 'Statistiques'], ['analytics.view']],
-  ['audit', '/admin/audit', '⌛', ['سجل العمليات', 'Journal d’audit'], ['audit.view']],
   ['settings', '/admin/settings', '⚙', ['الإعدادات', 'Paramètres'], ['settings.manage']],
 ];
 

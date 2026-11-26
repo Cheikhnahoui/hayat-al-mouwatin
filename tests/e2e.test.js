@@ -75,7 +75,7 @@ test('anonymous users are redirected; CSRF token is enforced', async () => {
 
 test('RBAC enforced on the backend', async () => {
   const jo = new Client(); await jo.login('jo');
-  for (const p of ['/admin/users', '/admin/settings', '/admin/categories', '/admin/audit', '/admin/ads', '/admin/analytics', '/admin/comments']) assert.equal((await jo.get(p)).status, 403, p);
+  for (const p of ['/admin/users', '/admin/settings', '/admin/categories', '/admin/ads', '/admin/analytics', '/admin/comments']) assert.equal((await jo.get(p)).status, 403, p);
   assert.equal((await jo.get('/admin/articles')).status, 200);
   const ad = new Client(); await ad.login('adsman');
   assert.equal((await ad.get('/admin/articles')).status, 403);
@@ -85,7 +85,6 @@ test('RBAC enforced on the backend', async () => {
   assert.equal((await adm.get('/admin/categories')).status, 200);
   const boss = new Client(); await boss.login('boss');
   assert.equal((await boss.get('/admin/settings')).status, 200);
-  assert.equal((await boss.get('/admin/audit')).status, 200);
 });
 
 let artId;
@@ -391,8 +390,8 @@ test('every public and admin page renders for a super admin (200/redirect only)'
   const cats = await db.prepare('SELECT slug, lang FROM category_translations').all();
   const pages = ['/ar', '/fr', '/ar/search', '/ar/search?q=خبر', '/fr/search?q=a&category=1&from=2026-01-01&to=2027-01-01', '/ar/feed.xml', '/sitemap.xml', '/robots.txt',
     ...cats.map((c) => `/${c.lang}/category/${encodeURIComponent(c.slug)}`), ...cats.map((c) => `/${c.lang}/category/${encodeURIComponent(c.slug)}?page=2`),
-    '/admin', '/admin/articles', '/admin/articles/new', '/admin/articles?status=pending', '/admin/categories', '/admin/categories/new', '/admin/categories/1', '/admin/tags', '/admin/media', '/admin/media/list.json',
-    '/admin/comments', '/admin/ads', '/admin/ads/new', '/admin/users', '/admin/users/new', '/admin/users/1', '/admin/notifications', '/admin/analytics', '/admin/audit', '/admin/settings', '/admin/profile', '/admin/dashboard', '/admin/news'];
+    '/admin', '/admin/articles', '/admin/articles/new', '/admin/articles?status=pending', '/admin/categories', '/admin/categories/new', '/admin/categories/1', '/admin/media', '/admin/media/list.json',
+    '/admin/comments', '/admin/ads', '/admin/ads/new', '/admin/users', '/admin/users/new', '/admin/users/1', '/admin/notifications', '/admin/analytics', '/admin/settings', '/admin/profile', '/admin/dashboard', '/admin/news'];
   for (const p of pages) { const r = await boss.get(p); assert.ok(r.status < 400, `${p} -> ${r.status}`); }
 });
 
@@ -438,4 +437,15 @@ test('logging in again from a browser that already has a session works', async (
   const r = await other.req('/admin/login', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', origin: new URL(base).origin }, body: new URLSearchParams({ identifier: 'adm', password: PW, lc: lc2 }).toString() });
   assert.equal(r.status, 302); assert.equal(r.headers.get('location'), '/admin');
   assert.equal((await other.get('/admin')).status, 200);
+});
+
+test('tags and audit-log admin pages are removed: no menu entry, old URLs go back to the dashboard', async () => {
+  const boss = new Client(); await boss.login('boss');
+  const dash = (await boss.get('/admin')).text_;
+  assert.ok(!dash.includes('href="/admin/tags"') && !dash.includes('href="/admin/audit"'), 'no sidebar links');
+  for (const p of ['/admin/tags', '/admin/audit']) { const r = await boss.get(p); assert.equal(r.status, 302, p); assert.equal(r.headers.get('location'), '/admin', p); }
+  // writing tags from the article editor still works
+  const r = await boss.p('/admin/articles', { title_ar: 'وسوم من المحرر', content_ar: '<p>x</p>', enabled_ar: '1', category_id: '1', tags_ar: 'وسم-أ, وسم-ب' });
+  const id = idFrom(r, /articles\/(\d+)/);
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM article_tags WHERE article_id=?').get(id)).n, 2);
 });

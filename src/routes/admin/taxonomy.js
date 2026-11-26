@@ -105,40 +105,4 @@ router.post('/categories/:id/delete', need('categories.manage'), async (req, res
   (await audit(req, 'category.delete', 'category', id)); res.redirect('/admin/categories?m=deleted');
 });
 
-// ================= TAGS =================
-router.get('/tags', need('tags.manage'), async (req, res) => {
-  const c = K.ctxFor(req), { L } = c;
-  const q = String(req.query.q || '').trim().slice(0, 60);
-  const rows = (await db.prepare(`SELECT t.id, (SELECT name FROM tag_translations WHERE tag_id=t.id AND lang='ar') ar, (SELECT name FROM tag_translations WHERE tag_id=t.id AND lang='fr') fr,
-    (SELECT COUNT(*) FROM article_tags WHERE tag_id=t.id) n FROM tags t
-    WHERE @q = '' OR EXISTS (SELECT 1 FROM tag_translations x WHERE x.tag_id=t.id AND x.name LIKE '%' || @q || '%') ORDER BY t.id DESC LIMIT 200`).all({ q: q.replace(/[%_]/g, '') }));
-  const body = `<form class="bar" method="get"><input name="q" value="${esc(q)}" placeholder="${esc(L('بحث…', 'Rechercher…'))}"><button class="btn sm">${esc(L('بحث', 'Chercher'))}</button></form>
-<form method="post" action="/admin/tags" class="bar">${K.csrfField(c)}<input name="name_ar" placeholder="AR" dir="rtl"><input name="name_fr" placeholder="FR"><button class="btn sm">+ ${esc(L('وسم', 'Tag'))}</button></form>
-<div class="box">${K.table(['AR', 'FR', L('المقالات', 'Articles'), ''], rows.map((r) => `<tr><td colspan="2"><form method="post" action="/admin/tags/${r.id}" class="bar" style="margin:0">${K.csrfField(c)}<input name="name_ar" value="${esc(r.ar || '')}" dir="rtl" placeholder="AR"><input name="name_fr" value="${esc(r.fr || '')}" placeholder="FR"><button class="btn gh sm">${esc(L('حفظ', 'OK'))}</button></form></td><td>${r.n}</td><td>${K.postForm(c, `/admin/tags/${r.id}/delete`, `<button class="btn dg sm">✕</button>`, { confirm: L('حذف الوسم؟', 'Supprimer ce tag ?') })}</td></tr>`))}</div>`;
-  res.send(K.shell(c, { title: L('الوسوم', 'Tags'), active: 'tags', body }));
-});
-async function upsertTag(tagId, lang, name) {
-  name = text(name).slice(0, 60);
-  if (!name) { (await db.prepare('DELETE FROM tag_translations WHERE tag_id = ? AND lang = ?').run(tagId, lang)); return; }
-  let slug = slugify(name, 60), n = 1;
-  while ((await db.prepare('SELECT 1 FROM tag_translations WHERE lang = ? AND slug = ? AND tag_id <> ?').get(lang, slug, tagId))) slug = `${slugify(name, 55)}-${++n}`;
-  (await db.prepare('INSERT INTO tag_translations (tag_id, lang, name, slug) VALUES (?,?,?,?) ON CONFLICT(tag_id, lang) DO UPDATE SET name = excluded.name, slug = excluded.slug').run(tagId, lang, name, slug));
-}
-router.post('/tags', need('tags.manage'), async (req, res) => {
-  if (!text(req.body.name_ar) && !text(req.body.name_fr)) return res.redirect('/admin/tags?e=invalid');
-  (await db.transaction(async () => { const id = (await db.prepare('INSERT INTO tags DEFAULT VALUES').run()).lastInsertRowid; (await upsertTag(id, 'ar', req.body.name_ar)); (await upsertTag(id, 'fr', req.body.name_fr)); })());
-  (await audit(req, 'tag.create', 'tag')); res.redirect('/admin/tags?m=saved');
-});
-router.post('/tags/:id', need('tags.manage'), async (req, res) => {
-  const id = +req.params.id;
-  if (!(await db.prepare('SELECT 1 FROM tags WHERE id = ?').get(id))) return res.redirect('/admin/tags?e=invalid');
-  (await db.transaction(async () => { (await upsertTag(id, 'ar', req.body.name_ar)); (await upsertTag(id, 'fr', req.body.name_fr)); })());
-  (await audit(req, 'tag.update', 'tag', id)); res.redirect('/admin/tags?m=saved');
-});
-router.post('/tags/:id/delete', need('tags.manage'), async (req, res) => {
-  for (const tbl of ['article_tags', 'tag_translations']) await db.prepare(`DELETE FROM ${tbl} WHERE tag_id = ?`).run(+req.params.id);
-  (await db.prepare('DELETE FROM tags WHERE id = ?').run(+req.params.id));
-  (await audit(req, 'tag.delete', 'tag', req.params.id)); res.redirect('/admin/tags?m=deleted');
-});
-
 module.exports = router;

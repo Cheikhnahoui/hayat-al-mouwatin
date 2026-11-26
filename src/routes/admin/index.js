@@ -99,7 +99,7 @@ router.get(/^\/(articles|categories|users|ads|media)\/(\d+)\/(edit|view|show|upd
 // publishing is a POST action; if someone opens its URL in the browser, show the article page where the button is
 router.get(/^\/articles\/(\d+)\/(publish|submit|approve|reject|schedule|unpublish|archive|restore|delete|feature)\/?$/, (req, res) => res.redirect(`/admin/articles/${req.params[0]}`));
 // friendly aliases for common guesses
-for (const [from, to] of [['/dashboard', '/admin'], ['/news', '/admin/articles'], ['/posts', '/admin/articles'], ['/article', '/admin/articles'], ['/articles/add', '/admin/articles/new'], ['/news/new', '/admin/articles/new'], ['/add', '/admin/articles/new']]) router.get(from, (req, res) => res.redirect(to));
+for (const [from, to] of [['/tags', '/admin'], ['/audit', '/admin'], ['/dashboard', '/admin'], ['/news', '/admin/articles'], ['/posts', '/admin/articles'], ['/article', '/admin/articles'], ['/articles/add', '/admin/articles/new'], ['/news/new', '/admin/articles/new'], ['/add', '/admin/articles/new']]) router.get(from, (req, res) => res.redirect(to));
 router.use((req, res) => {
   const c = K.ctxFor(req);
   res.status(404).send(K.shell(c, { title: '404', active: '', body: `<div class="box"><p>${esc(c.L('الصفحة غير موجودة', 'Page introuvable'))}</p><p class="meta-line" dir="ltr">${esc(req.originalUrl)}</p><p><a class="btn" href="/admin">${esc(c.L('العودة إلى لوحة التحكم', 'Retour au tableau de bord'))}</a></p></div>` }));
