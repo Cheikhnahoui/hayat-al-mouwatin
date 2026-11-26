@@ -8,6 +8,13 @@ process.env.DATABASE_PATH = path.join(tmp, 't.db');
 process.env.UPLOAD_DIR = path.join(tmp, 'up');
 process.env.SITE_URL = 'http://test.local';
 process.env.NODE_ENV = 'test';
+// SAFETY: a local .env may point at the hosted database / Blob store. dotenv never overrides variables that already exist,
+// so blank them here: the tests create super-admin accounts with a known password and must only ever use a temporary local file.
+process.env.DATABASE_URL = '';
+process.env.DATABASE_AUTH_TOKEN = '';
+process.env.BLOB_READ_WRITE_TOKEN = '';
+process.env.BLOB_PUBLIC_URL = '';
+process.env.CRON_SECRET = '';
 
 const db = require('../src/db');
 const { createApp, ready } = require('../src/server');
@@ -50,6 +57,7 @@ class Client {
 const idFrom = (r, re) => +r.headers.get('location').match(re)[1];
 
 test.before(async () => {
+  assert.ok(require('../src/config').databaseUrl.startsWith('file:'), 'refusing to run the tests against a remote database');
   await ready();
   const app = createApp();
   await new Promise((r) => { server = app.listen(0, r); });

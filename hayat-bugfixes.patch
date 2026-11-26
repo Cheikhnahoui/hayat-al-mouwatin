@@ -1,0 +1,185 @@
+From a8247e89837b63b0cbecbc9b39061342fe3689f9 Mon Sep 17 00:00:00 2001
+From: Bugfix <bugfix@hayat.local>
+Date: Thu, 26 Nov 2026 00:25:54 +0000
+Subject: [PATCH] Fix admin, public-site and notification bugs
+
+- admin: unread-notification badge was reading .n from a Promise (always empty)
+- admin: users forced to change a temporary password could not submit /profile/password
+- admin: read-only article view no longer throws in the editor script; unchecked language boxes stay unchecked after a validation error
+- admin: login 429 page now sets the login token cookie
+- public: top-bar date was empty (fmtDate received an ISO string already ending in Z)
+- public: category page 2 repeated the last article of page 1
+- public: footer/home ad impressions no longer counted on POSTs, RSS or disabled sections
+- public: sitemap.xml uses one query instead of one per article
+- notifications: honour per-user permission overrides
+- revisions: restoring a revision restores its tags
+- media: HEIC/AVIF files are rejected instead of being stored as .mp4
+- .npmrc: fix stale comment
+---
+ .npmrc                       |  2 +-
+ public/js/admin.js           |  4 ++--
+ src/lib/articles.js          |  3 +++
+ src/lib/media.js             |  6 +++++-
+ src/lib/notify.js            | 14 +++++++++-----
+ src/lib/util.js              |  3 ++-
+ src/routes/admin/articles.js |  2 +-
+ src/routes/admin/index.js    |  8 ++++++--
+ src/routes/public.js         | 20 ++++++++++++++------
+ src/views/admin/kit.js       |  2 +-
+ 10 files changed, 44 insertions(+), 20 deletions(-)
+
+diff --git a/.npmrc b/.npmrc
+index 2968e56..302fdf3 100644
+--- a/.npmrc
++++ b/.npmrc
+@@ -1,2 +1,2 @@
+-# better-sqlite3 >=13 and sharp ship prebuilt binaries; skipping install scripts avoids a fragile native compile
++# sharp and libsql ship prebuilt binaries; skipping install scripts avoids a fragile native compile
+ ignore-scripts=true
+diff --git a/public/js/admin.js b/public/js/admin.js
+index e197e02..fef65d9 100644
+--- a/public/js/admin.js
++++ b/public/js/admin.js
+@@ -5,3 +5,3 @@
+   var activeEd = null;
+-  $$('.ed').forEach(function (ed) {
++  $$('.ed[data-for]').forEach(function (ed) { // read-only articles render a plain .ed without data-for
+     var ta = document.getElementById(ed.getAttribute('data-for'));
+@@ -12,3 +12,3 @@
+   // sync before submit
+-  $$('form[data-editor]').forEach(function (f) { f.addEventListener('submit', function () { $$('.ed', f).forEach(function (ed) { document.getElementById(ed.getAttribute('data-for')).value = ed.innerHTML; }); }); });
++  $$('form[data-editor]').forEach(function (f) { f.addEventListener('submit', function () { $$('.ed[data-for]', f).forEach(function (ed) { document.getElementById(ed.getAttribute('data-for')).value = ed.innerHTML; }); }); });
+ 
+diff --git a/src/lib/articles.js b/src/lib/articles.js
+index 08c7da2..fa1e713 100644
+--- a/src/lib/articles.js
++++ b/src/lib/articles.js
+@@ -5,2 +5,5 @@
+     }
++    // the snapshot also stores tag ids: restore them too (skipping tags deleted since)
++    (await db.prepare('DELETE FROM article_tags WHERE article_id = ?').run(id));
++    for (const tid of s.tags || []) (await db.prepare('INSERT OR IGNORE INTO article_tags (article_id, tag_id) SELECT ?, id FROM tags WHERE id = ?').run(id, tid));
+     (await revision(id, req.user.id, `restored #${revId}`));
+diff --git a/src/lib/media.js b/src/lib/media.js
+index e1f76a6..8fe0b48 100644
+--- a/src/lib/media.js
++++ b/src/lib/media.js
+@@ -2,3 +2,7 @@
+   if (buf.slice(0, 4).toString('ascii') === 'RIFF' && buf.slice(8, 12).toString('ascii') === 'WEBP') return { kind: 'image', mime: 'image/webp' };
+-  if (buf.slice(4, 8).toString('ascii') === 'ftyp') return { kind: 'video', mime: 'video/mp4', ext: 'mp4' };
++  if (buf.slice(4, 8).toString('ascii') === 'ftyp') {
++    // HEIC / AVIF photos share the ISO-BMFF container with MP4: reject them instead of storing a photo as a "video"
++    if (/^(heic|heix|hevc|hevx|mif1|msf1|avif|avis)$/.test(buf.slice(8, 12).toString('ascii'))) return null;
++    return { kind: 'video', mime: 'video/mp4', ext: 'mp4' };
++  }
+   if (buf.slice(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))) return { kind: 'video', mime: 'video/webm', ext: 'webm' };
+diff --git a/src/lib/notify.js b/src/lib/notify.js
+index 854500a..d729aa7 100644
+--- a/src/lib/notify.js
++++ b/src/lib/notify.js
+@@ -8,9 +8,13 @@ async function notifyUser(userId, type, ar, fr, link = '') {
+ }
+-// notify all active users holding a permission (directly via role, or override), except `exceptId`
++// notify all active users holding a permission, except `exceptId`. Same rules as auth.permissionsFor():
++// super admins always; otherwise a granted per-user override, or a role permission that is not revoked by an override.
+ async function notifyPermission(perm, type, ar, fr, link = '', exceptId = null) {
+   const users = await db.prepare(`
+-    SELECT DISTINCT u.id FROM users u
+-    JOIN user_roles ur ON ur.user_id = u.id JOIN roles r ON r.id = ur.role_id
+-    LEFT JOIN role_permissions rp ON rp.role_id = r.id LEFT JOIN permissions p ON p.id = rp.permission_id
+-    WHERE u.is_active = 1 AND (r.key = 'super_admin' OR p.key = ?)`).all(perm);
++    SELECT u.id FROM users u WHERE u.is_active = 1 AND (
++      EXISTS (SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = u.id AND r.key = 'super_admin')
++      OR EXISTS (SELECT 1 FROM user_permissions up JOIN permissions p ON p.id = up.permission_id WHERE up.user_id = u.id AND p.key = @perm AND up.granted = 1)
++      OR (
++        EXISTS (SELECT 1 FROM user_roles ur JOIN role_permissions rp ON rp.role_id = ur.role_id JOIN permissions p ON p.id = rp.permission_id WHERE ur.user_id = u.id AND p.key = @perm)
++        AND NOT EXISTS (SELECT 1 FROM user_permissions up JOIN permissions p ON p.id = up.permission_id WHERE up.user_id = u.id AND p.key = @perm AND up.granted = 0)
++      ))`).all({ perm });
+   await db.transaction(async () => {
+diff --git a/src/lib/util.js b/src/lib/util.js
+index 147db35..1e7b3ba 100644
+--- a/src/lib/util.js
++++ b/src/lib/util.js
+@@ -3,3 +3,4 @@ function fmtDate(sql, lang, withTime = false) {
+   if (!sql) return '';
+-  const d = new Date(String(sql).replace(' ', 'T') + 'Z');
++  const iso = String(sql).replace(' ', 'T');
++  const d = new Date(/(Z|[+-]\d\d:?\d\d)$/i.test(iso) ? iso : iso + 'Z'); // SQL datetimes (UTC) and ISO strings that already carry a zone
+   if (isNaN(d)) return '';
+diff --git a/src/routes/admin/articles.js b/src/routes/admin/articles.js
+index d407ed2..863e522 100644
+--- a/src/routes/admin/articles.js
++++ b/src/routes/admin/articles.js
+@@ -3,3 +3,3 @@
+     const dir = l === 'ar' ? 'rtl' : 'ltr';
+-    const en = values ? values[`enabled_${l}`] !== '0' : tr[l] ? !!tr[l].is_enabled : true;
++    const en = values ? values[`enabled_${l}`] === '1' : tr[l] ? !!tr[l].is_enabled : true; // an unchecked box is absent from the POST body
+     return `<div class="pane ${on ? 'on' : ''}" dir="${dir}">
+diff --git a/src/routes/admin/index.js b/src/routes/admin/index.js
+index d28b56e..1fc5899 100644
+--- a/src/routes/admin/index.js
++++ b/src/routes/admin/index.js
+@@ -3,3 +3,3 @@
+ const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 15, standardHeaders: true, legacyHeaders: false, skipSuccessfulRequests: true,
+-  handler: (req, res) => res.status(429).send(loginPage(req, 'rate')) });
++  handler: (req, res) => { setLc(req, res); res.status(429).send(loginPage(req, 'rate')); } });
+ 
+@@ -9,5 +9,9 @@ function loginPage(req, error) {
+ router.use(auth.requireAuth);
++router.use(async (req, res, next) => {
++  req.unread = (await db.prepare('SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND is_read = 0').get(req.user.id)).n;
++  next();
++});
+ router.use((req, res, next) => {
+   // force password change after an admin reset
+-  if (req.user.must_change_password && !['/profile', '/logout', '/lang/ar', '/lang/fr'].includes(req.path)) return res.redirect('/admin/profile?e=short');
++  if (req.user.must_change_password && !['/profile', '/profile/password', '/logout', '/lang/ar', '/lang/fr'].includes(req.path)) return res.redirect('/admin/profile?e=short');
+   next();
+diff --git a/src/routes/public.js b/src/routes/public.js
+index 1cd2fc9..91b38dd 100644
+--- a/src/routes/public.js
++++ b/src/routes/public.js
+@@ -3,5 +3,8 @@
+   }
+-  const arts = (await db.prepare(`SELECT a.id, a.updated_at FROM articles a WHERE ${content.PUBLISHED} ORDER BY a.published_at DESC LIMIT 5000`).all());
+-  for (const a of arts) {
+-    const av = (await content.availableLangs(a.id));
++  // one query for every translation (one query per article means thousands of round-trips on Turso)
++  const trs = (await db.prepare(`SELECT a.id, a.updated_at, t.lang, t.slug FROM articles a JOIN article_translations t ON t.article_id = a.id AND t.is_enabled = 1 AND t.title <> '' AND t.content <> '' WHERE ${content.PUBLISHED} ORDER BY a.published_at DESC, a.id DESC LIMIT 10000`).all());
++  const byArt = new Map();
++  for (const r of trs) { if (!byArt.has(r.id)) byArt.set(r.id, { id: r.id, updated_at: r.updated_at, av: {} }); byArt.get(r.id).av[r.lang] = r.slug; }
++  for (const a of byArt.values()) {
++    const av = a.av;
+     const map = Object.fromEntries(langs.filter((l) => av[l]).map((l) => [l, articlePath(l, { id: a.id, slug: av[l] })]));
+@@ -12,3 +15,3 @@
+   ctx.adTop = req.path === '/' ? (await ads.pick('home_top', { isBot: isBot(req) })) : null;
+-  ctx.adFooter = (await ads.pick('footer', { isBot: isBot(req) }));
++  ctx.adFooter = req.method === 'GET' && req.path !== '/feed.xml' ? (await ads.pick('footer', { isBot: isBot(req) })) : null; // no impressions for POSTs / RSS
+   req.ctx = ctx;
+@@ -18,3 +21,7 @@ L.get('/', async (req, res) => {
+   const { ctx } = req;
+-  const adsCtx = { sidebar: (await ads.pick('home_sidebar', { isBot: isBot(req) })), between: [(await ads.pick('home_between', { isBot: isBot(req) }))].filter(Boolean) };
++  const secs = settings.get('home_sections').split(',');
++  const adsCtx = {
++    sidebar: secs.includes('latest') ? (await ads.pick('home_sidebar', { isBot: isBot(req) })) : null,
++    between: secs.includes('categories') ? [(await ads.pick('home_between', { isBot: isBot(req) }))].filter(Boolean) : [],
++  };
+   res.page({ body: (await P.home(ctx, adsCtx)), nav: 'home', alternates: { ar: '/ar', fr: '/fr' }, canonical: '/' + ctx.lang,
+@@ -23,3 +30,4 @@ L.get('/', async (req, res) => {
+   const featured = pg === 1 ? (await content.list(lang, { where, params, limit: 1 }))[0] : null;
+-  const items = (await content.list(lang, { where: where + (featured ? ' AND a.id <> @f' : ''), params: { ...params, f: featured?.id }, limit: PER_PAGE, offset: (pg - 1) * PER_PAGE }));
++  // page 1 shows the featured article + (PER_PAGE - 1) others, so page 2 (offset PER_PAGE) does not repeat one
++  const items = (await content.list(lang, { where: where + (featured ? ' AND a.id <> @f' : ''), params: { ...params, f: featured?.id }, limit: featured ? PER_PAGE - 1 : PER_PAGE, offset: (pg - 1) * PER_PAGE }));
+   const slugs = (await content.categorySlugs(cat.id));
+diff --git a/src/views/admin/kit.js b/src/views/admin/kit.js
+index 1f3ee8c..164be6c 100644
+--- a/src/views/admin/kit.js
++++ b/src/views/admin/kit.js
+@@ -3,3 +3,3 @@ function shell(c, { title, active, body, back }) {
+   const { L, lang, user } = c;
+-  const unread = require('../../db').prepare('SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND is_read = 0').get(user.id).n;
++  const unread = c.req.unread || 0; // counted once per request in routes/admin/index.js (db calls are async)
+   const s = settings.all();
+-- 
+2.43.0
+

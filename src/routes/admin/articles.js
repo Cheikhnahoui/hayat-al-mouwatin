@@ -14,6 +14,16 @@ router.use(guard('articles.create', 'articles.edit_own', 'articles.edit_any', 'a
 const canView = (req, a) => req.can('articles.edit_any') || req.can('articles.review') || req.can('articles.publish') || a.author_id === req.user.id;
 const seesAll = (req) => req.can('articles.edit_any') || req.can('articles.review') || req.can('articles.publish');
 const backWith = (res, id, key, val) => res.redirect(`/admin/articles/${id}?${key}=${val}`);
+// After creating an article, check that the id we redirect to can really be read back. On the hosted database a stale read
+// (or an unexpected insert id) would otherwise end on a 404: fall back to the author's newest article, then to the list.
+async function visibleId(req, id) {
+  try {
+    if (id && (await A.getRow(id))) return id;
+    const r = await db.prepare('SELECT id FROM articles WHERE author_id = ? ORDER BY id DESC LIMIT 1').get(req.user.id);
+    console.error(`[articles] created id ${id} is not readable; newest article of user ${req.user.id} is ${r ? r.id : 'none'}`);
+    return r ? r.id : null;
+  } catch (e) { console.error('[articles] visibleId failed:', e.message); return null; }
+}
 
 function run(fn) {
   return async (req, res, next) => {
@@ -144,8 +154,9 @@ ${live ? Object.entries(live).map(([l, sl]) => `<p><a href="${articlePath(l, { i
 router.get('/new', guard('articles.create'), async (req, res) => (await formPage(req, res, null, null, null)));
 router.post('/', async (req, res, next) => {
   try {
-    const id = (await A.save(req, null, normalize(req.body)));
-    res.redirect(`/admin/articles/${id}?m=saved`);
+    const created = (await A.save(req, null, normalize(req.body)));
+    const id = (await visibleId(req, created));
+    res.redirect(id ? `/admin/articles/${id}?m=saved` : '/admin/articles?m=saved');
   } catch (e) {
     if (e instanceof A.Denied) return res.forbidden();
     if (e instanceof A.Invalid) return (await formPage(req, res, null, req.body, e.message));
@@ -155,7 +166,16 @@ router.post('/', async (req, res, next) => {
 const normalize = (b) => ({ ...b, enabled_ar: b.enabled_ar ? '1' : '0', enabled_fr: b.enabled_fr ? '1' : '0', comments_enabled: b.comments_enabled ? '1' : '0', publish_at: fromInput(b.publish_at) });
 
 router.get('/:id', async (req, res, next) => {
-  const art = (await A.getRow(parseInt(req.params.id, 10)));
+  const id = parseInt(req.params.id, 10);
+  let art = (await A.getRow(id));
+  // right after an action (?m=...) the hosted database may still serve a stale read: retry briefly, then show the list instead of a 404
+  if (!art && (req.query.m || req.query.e)) {
+    for (let i = 0; i < 4 && !art; i++) { await new Promise((r) => setTimeout(r, 350)); art = (await A.getRow(id)); }
+    if (!art) {
+      console.error(`[articles] ${req.originalUrl}: article ${id} not found after retries`);
+      return res.redirect('/admin/articles' + (K.MSG[req.query.m] ? `?m=${req.query.m}` : ''));
+    }
+  }
   if (!art) return next();
   if (!canView(req, art)) return res.forbidden();
   (await formPage(req, res, art, null, req.query.e && !K.ERR[req.query.e] ? 'invalid' : null));
