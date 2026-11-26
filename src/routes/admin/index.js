@@ -94,6 +94,10 @@ router.use('/ads', require('./ads'));
 router.use('/users', require('./users'));
 router.use('/', require('./misc'));
 
+// /admin/<section>/<id>/edit (or /view) -> the page that exists at /admin/<section>/<id>
+router.get(/^\/(articles|categories|users|ads|media)\/(\d+)\/(edit|view|show|update)\/?$/, (req, res) => res.redirect(`/admin/${req.params[0]}/${req.params[1]}`));
+// publishing is a POST action; if someone opens its URL in the browser, show the article page where the button is
+router.get(/^\/articles\/(\d+)\/(publish|submit|approve|reject|schedule|unpublish|archive|restore|delete|feature)\/?$/, (req, res) => res.redirect(`/admin/articles/${req.params[0]}`));
 // friendly aliases for common guesses
 for (const [from, to] of [['/dashboard', '/admin'], ['/news', '/admin/articles'], ['/posts', '/admin/articles'], ['/article', '/admin/articles'], ['/articles/add', '/admin/articles/new'], ['/news/new', '/admin/articles/new'], ['/add', '/admin/articles/new']]) router.get(from, (req, res) => res.redirect(to));
 router.use((req, res) => {

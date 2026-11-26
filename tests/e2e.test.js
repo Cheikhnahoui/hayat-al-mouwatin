@@ -406,3 +406,13 @@ test('public site no longer links to the admin panel; /ar/admin and /fr/admin re
   assert.equal((await new Client().get('/admin')).status, 302); // -> login
   assert.match((await new Client().get('/admin/login')).text_, /name="identifier"/);
 });
+
+test('admin URL variants redirect to the right page instead of 404', async () => {
+  const boss = new Client(); await boss.login('boss');
+  const art = (await db.prepare('SELECT id FROM articles ORDER BY id LIMIT 1').get()).id;
+  for (const [from, to] of [[`/admin/articles/${art}/edit`, `/admin/articles/${art}`], [`/admin/articles/${art}/view`, `/admin/articles/${art}`], [`/admin/articles/${art}/publish`, `/admin/articles/${art}`], ['/admin/categories/1/edit', '/admin/categories/1'], ['/admin/users/1/edit', '/admin/users/1']]) {
+    const r = await boss.get(from);
+    assert.equal(r.status, 302, from); assert.equal(r.headers.get('location'), to, from);
+    assert.equal((await boss.get(to)).status, 200, to);
+  }
+});
