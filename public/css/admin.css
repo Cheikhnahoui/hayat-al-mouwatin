@@ -55,3 +55,75 @@ body.adm{background:var(--bg)}
   table.resp thead{display:none}table.resp tr{display:block;border:1px solid var(--bd);border-radius:6px;margin-bottom:8px;background:var(--card)}table.resp td{display:flex;justify-content:space-between;gap:8px;border:0;padding:6px 10px}table.resp td::before{content:attr(data-l);color:var(--mu);font-weight:700}
 }
 .btn.dg{background:#b42318;color:#fff}
+
+/* ================= Phones and small tablets ================= */
+.v{display:block;min-width:0}
+@media (max-width:860px){
+  html{-webkit-text-size-adjust:100%}
+  input,select,textarea{font-size:16px}               /* stops iOS from zooming into fields */
+  .amain{padding:12px 12px 28px}
+  .pt{font-size:20px;margin-bottom:12px}
+  .btn{min-height:40px}.btn.sm{min-height:34px}
+  .btn,.ahd a,.ahd button{white-space:nowrap}
+
+  /* header: nothing may wrap letter by letter */
+  .ahd{gap:6px;padding:6px 10px}
+  .ahd .logo{min-width:0;flex:0 1 auto}.ahd .logo b{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ahd .btn,.ahd .langsw{padding:5px 10px;font-size:13px;line-height:1.4;min-height:0}
+  .ahd .notif{padding:0 6px}
+  .ahd form.inline{flex:none}
+  #asb{box-shadow:0 0 0 100vmax rgba(0,0,0,.35);width:min(280px,82vw)}
+
+  /* filter / action bars */
+  .bar{gap:8px}.bar>input,.bar>select{flex:1 1 140px;min-width:0;width:100%}
+  .bar form.inline,.bar .btn{flex:0 0 auto}
+
+  /* tables become cards: one card per row, "label  value" lines */
+  .tw{overflow:visible}
+  table.resp,table.resp tbody{display:block;width:100%}
+  table.resp thead{display:none}
+  table.resp tr{display:block;border:1px solid var(--bd);border-radius:10px;background:var(--card);margin-bottom:10px;padding:4px 0;overflow:hidden}
+  table.resp td{display:flex;align-items:center;justify-content:space-between;gap:14px;border:0;padding:8px 14px;overflow-wrap:anywhere}
+  table.resp td::before{content:attr(data-l);flex:none;color:var(--mu);font-size:13px;font-weight:700;max-width:40%}
+  table.resp td[data-l=""]::before{display:none}
+  table.resp td .v{flex:1 1 auto;text-align:end}
+  table.resp td[data-l=""] .v{text-align:start}
+  table.resp td:first-child{font-size:16px;border-bottom:1px solid var(--bd);padding-bottom:10px;margin-bottom:2px}
+  table.resp td:first-child .v{text-align:start}
+  table.resp td:last-child:has(.btn),table.resp td:last-child:has(form){padding-top:10px}
+  table.resp td .btn{min-height:38px}
+
+  .tabs button{flex:1}
+  .ed{min-height:240px;font-size:16px}
+  .ed-tb button{min-height:38px;min-width:38px}
+  .pick{flex-wrap:wrap}
+  .modal{padding:8px}.modal .in{padding:10px;max-height:94vh}
+  .mgrid{grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:8px}
+  .notif-item{flex-wrap:wrap}
+  .chk-grid{grid-template-columns:1fr}
+  .logbox{margin:24px auto}
+  .cards{grid-template-columns:repeat(2,1fr);gap:10px}.cards .box b{font-size:24px}
+  .bars{gap:3px}
+}
+@media (max-width:480px){
+  .ahd .logo b{display:none}
+}
+
+/* polish for the card layout */
+@media (max-width:860px){
+  .box:has(> .tw > table.resp){background:none;border:0;padding:0;box-shadow:none}
+  table.resp td:first-child::before{display:none}
+  table.resp td:first-child .v{font-weight:700}
+  table.resp td[data-l=""] .v{flex:1 1 100%}
+  table.resp td[data-l=""] .btn,table.resp td[data-l=""] button{width:100%;text-align:center;justify-content:center}
+  table.resp td[data-l=""] form.inline{display:block}
+}
+
+@media (max-width:860px){
+  .art-edit .sidebar-stack{order:-1}                 /* status + publish buttons first on phones */
+  .art-edit .sidebar-stack form,.art-edit .sidebar-stack .btn{max-width:100%}
+  .sidebar-stack .box [style*='grid']{grid-template-columns:1fr}
+  .sidebar-stack .btn.sm{width:100%;justify-content:center}
+  .sidebar-stack form.inline{display:block;width:100%}
+  .sidebar-stack form.inline input{width:100%;margin-bottom:6px}
+}

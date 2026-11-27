@@ -137,7 +137,7 @@ ${live ? Object.entries(live).map(([l, sl]) => `<p><a href="${articlePath(l, { i
   }
   const flashErr = errKey ? `<div class="flash err" role="alert">${esc(L(...(K.ERR[errKey] || K.ERR.invalid)))}</div>` : '';
   const html = K.shell(c, { title: isNew ? L('مقال جديد', 'Nouvel article') : L('تحرير المقال', 'Modifier l’article'), active: 'articles', back: '/admin/articles',
-    body: `${flashErr}<div class="two"><div>${form}</div><div class="sidebar-stack">${side}</div></div>` });
+    body: `${flashErr}<div class="two art-edit"><div>${form}</div><div class="sidebar-stack">${side}</div></div>` });
   res.send(html);
 }
 

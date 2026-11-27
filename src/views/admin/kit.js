@@ -69,7 +69,23 @@ const STATUS_LABEL = {
   draft: ['مسودة', 'Brouillon'], pending: ['قيد المراجعة', 'En relecture'], rejected: ['مرفوض', 'Refusé'], scheduled: ['مجدول', 'Programmé'], published: ['منشور', 'Publié'], archived: ['مؤرشف', 'Archivé'],
 };
 const badge = (c, status) => `<span class="badge st-${status}">${esc(c.L(...STATUS_LABEL[status]))}</span>`;
-const table = (heads, rows) => `<div class="tw"><table><thead><tr>${heads.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('') || `<tr><td colspan="${heads.length}" class="meta">—</td></tr>`}</tbody></table></div>`;
+const plain = (h) => String(h).replace(/<[^>]*>/g, '').trim();
+// On phones (<= 860px) tables with 3+ columns become stacked cards: every cell gets its column title (data-l)
+// and its content is wrapped in .v so labels and values can sit side by side.
+function cardify(heads, rowHtml) {
+  let col = 0;
+  return rowHtml.replace(/<td([^>]*)>([\s\S]*?)<\/td>/g, (m, attrs, inner) => {
+    const span = +((/colspan="(\d+)"/.exec(attrs) || [])[1] || 1);
+    const label = /data-l=/.test(attrs) ? '' : ` data-l="${esc(plain(heads[col] ?? ''))}"`;
+    col += span;
+    return span > 1 ? m : `<td${attrs}${label}><div class="v">${inner}</div></td>`;
+  });
+}
+const table = (heads, rows) => {
+  const cards = heads.length >= 3;
+  const body = (cards ? rows.map((r) => cardify(heads, r)) : rows).join('') || `<tr><td colspan="${heads.length}" class="meta">—</td></tr>`;
+  return `<div class="tw"><table${cards ? ' class="resp"' : ''}><thead><tr>${heads.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>`;
+};
 const dt = (c, v) => fmtDate(v, c.lang, true);
 
 module.exports = { ctxFor, shell, csrfField, postForm, btn, badge, table, dt, STATUS_LABEL, MSG, ERR, esc };

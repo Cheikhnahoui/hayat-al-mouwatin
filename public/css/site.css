@@ -98,3 +98,32 @@ footer .soc-list{display:flex;gap:10px;flex-wrap:wrap}footer .soc-list a{display
   .hd .w{justify-content:space-between}.sr{flex:1 1 100%}.sr input{flex:1;width:auto}
 }
 @media print{.top,nav,.brk,.sh2,.cm,.adwrap,footer{display:none}}
+
+/* ================= Phones ================= */
+@media (max-width:860px){
+  input,select,textarea{font-size:16px}
+  .top .w{flex-wrap:wrap;gap:4px 10px}
+  .top .acts{margin-inline-start:auto}
+  .sh2{gap:8px}.sh2 .btn{flex:1 1 auto;text-align:center}
+  .filters label{flex:1 1 100%;min-width:0}
+  .art .body{font-size:17px;line-height:1.95}
+  .art .body table{display:block;overflow-x:auto;max-width:100%}
+  .art .body pre{overflow-x:auto}
+  .pager a,.pager span{padding:6px 11px;min-width:36px}
+  footer .w{padding-block:22px}
+  footer{padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+}
+@media (max-width:520px){
+  .big{min-height:250px}.cap{padding:40px 14px 14px}.cap h2{font-size:20px}.side .big{min-height:180px}
+  .row .im{width:92px;height:68px}.row h4{font-size:14px}
+  .hd .logo b{font-size:22px}
+  .cat-hd{padding:12px 14px}.cat-hd h1{font-size:22px}
+  .auth-box{flex-wrap:wrap}
+}
+
+/* phones: no sliding animation (text would start off-screen); headlines are visible at once and can be swiped */
+@media (max-width:860px){
+  .brk .t{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex:1;min-width:0}
+  .brk .t::-webkit-scrollbar{display:none}
+  .brk span{animation:none;display:inline-block}
+}

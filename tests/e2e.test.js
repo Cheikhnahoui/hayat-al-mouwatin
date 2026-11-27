@@ -449,3 +449,13 @@ test('tags and audit-log admin pages are removed: no menu entry, old URLs go bac
   const id = idFrom(r, /articles\/(\d+)/);
   assert.equal((await db.prepare('SELECT COUNT(*) n FROM article_tags WHERE article_id=?').get(id)).n, 2);
 });
+
+test('phone layout: admin tables carry column labels for the card view; public top bar shows the date', async () => {
+  const boss = new Client(); await boss.login('boss');
+  const users = (await boss.get('/admin/users')).text_;
+  assert.match(users, /<table class="resp">/); assert.match(users, /<td[^>]*data-l="[^"]+"><div class="v">/);
+  const css = (await new Client().get('/css/admin.css')).text_;
+  assert.match(css, /table\.resp td::before/);
+  const home = (await new Client().get('/ar')).text_;
+  assert.match(home, /<div class="top"><div class="w"><span>\d+ \S+ 20\d\d<\/span>/); // date is rendered (it used to be empty)
+});
